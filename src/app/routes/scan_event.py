@@ -6,14 +6,16 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.routes.dependencies import get_current_active_user, get_current_active_user_or_client, get_pagination_params, get_sort_by_params, RoleChecker
-from app.crud import scan_event_crud
+from app.crud import scan_event_crud, user_crud
 from app.crud.shop import shop_crud
 from app.database.db import get_db
 from app.log import get_logger
 from app.models import ScanEvent, User, ApiClient
 from app.schemas.scan_event import ScanEventCreate, ScanEventOut, ScanEventUpdate, ScanEventOutPaginated, ScanEventFilters, ConfirmShopRequest, NearbyShopOut
 from app.schemas.shop import ShopCreate
+from app.schemas.xp import XPGrant
 from app.services.openstreetmap import osm_service
+from app.services.xp_service import award_xp, XPAction
 
 log = get_logger(__name__)
 
@@ -262,8 +264,43 @@ async def create_scan_event(
             detail=f"Couldn't create scan event. Error: {str(e)}",
         ) from e
 
+    # Award XP for the scan. /scan-events/ is only ever called for
+    # Vegandex products (plain scans go through POST /users/me/scans
+    # instead), so every successful create here is a vegandex_scan — no
+    # "is this product in the vegandex" check needed. Only if the event
+    # is tied to a real user (API-client-only scans with no user_id
+    # don't earn anything).
+    xp_grants = []
+    if event.user_id:
+        scan_user = user_crud.get_one(db, User.id == event.user_id)
+        if scan_user:
+            vegandex_xp = award_xp(
+                db, scan_user, XPAction.VEGANDEX_SCAN,
+                reference_type="scan_event", reference_id=event.id,
+            )
+            if vegandex_xp:
+                xp_grants.append(XPGrant(
+                    action_key=XPAction.VEGANDEX_SCAN, xp=vegandex_xp))
+
+            # Community bonus: nobody has scanned this product at this
+            # shop before — global across users, not a per-user "have I
+            # seen this here" check.
+            if event.shop_id and not scan_event_crud.ean_already_found_at_shop(
+                db, event.ean, event.shop_id, exclude_event_id=event.id,
+            ):
+                first_in_shop_xp = award_xp(
+                    db, scan_user, XPAction.VEGANDEX_SCAN_FIRST_IN_SHOP,
+                    reference_type="scan_event", reference_id=event.id,
+                )
+                if first_in_shop_xp:
+                    xp_grants.append(XPGrant(
+                        action_key=XPAction.VEGANDEX_SCAN_FIRST_IN_SHOP,
+                        xp=first_in_shop_xp))
+
     # Build response with nearby shops (excluding the one already linked)
     response = ScanEventOut.model_validate(event)
+    response.xp_grants = xp_grants
+    response.xp_awarded = sum(grant.xp for grant in xp_grants)
     if nearby_shops:
         result = []
         for shop in nearby_shops:

@@ -5,11 +5,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.routes.dependencies import get_current_active_user, get_current_active_user_or_client, get_pagination_params, get_sort_by_params, RoleChecker
+from app.crud import user_crud
 from app.crud.error_reports import error_report_crud
 from app.database.db import get_db
 from app.log import get_logger
+from app.models import ApiClient, User
 from app.models.error_report import ErrorReport
 from app.schemas.error_report import ErrorReportCreate, ErrorReportOut, ErrorReportUpdate, ErrorReportOutPaginated, ErrorReportOutCount, ErrorReportFilters
+from app.services.xp_service import award_xp, XPAction
 
 log = get_logger(__name__)
 
@@ -170,6 +173,8 @@ def create_error_report(
         ),
     ],
     db: Session = Depends(get_db),
+    current_user_or_client: User | ApiClient = Depends(
+        get_current_active_user_or_client),
 ):
     """
     Create an error report.
@@ -178,6 +183,7 @@ def create_error_report(
         error_report_create (ErrorReportCreate): The error report data to be created.
         db (Session, optional): The database session.
             Defaults to Depends(get_db).
+        current_user_or_client (User | ApiClient): The current active user or API client.
 
     Returns:
         ErrorReportOut: The created error report.
@@ -201,6 +207,20 @@ def create_error_report(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Couldn't create error report. Error: {str(e)}",
         ) from e
+
+    user = None
+    if isinstance(current_user_or_client, User):
+        user = current_user_or_client
+    elif error_report_create.created_by is not None:
+        user = user_crud.get_one(db, User.id == error_report_create.created_by)
+
+    xp_awarded = 0
+    if user:
+        xp_awarded = award_xp(
+            db, user, XPAction.ERROR_REPORT,
+            reference_type="error_report", reference_id=error_report.id,
+        )
+    error_report.xp_awarded = xp_awarded
     return error_report
 
 

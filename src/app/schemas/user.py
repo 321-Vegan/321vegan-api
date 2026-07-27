@@ -51,6 +51,9 @@ class UserOut(UserBase):
     subscription_status: Optional[str] = None
     scan_count: int = 0
     scanned_products: List[ScanSummaryItem] = []
+    xp: int = 0
+    level: int = 1
+    xp_to_next_level: int = 0
 
     @field_validator('nb_products_sent', mode='before')
     @classmethod
@@ -118,6 +121,7 @@ class ScanCountInit(BaseModel):
 
 class ScanCountOut(BaseModel):
     scan_count: int
+    xp_awarded: Optional[int] = None
 
 
 class UserPatch(BaseModel):

@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime, timezone
+from app.schemas.xp import XPGrant
 
 
 class NearbyShopOut(BaseModel):
@@ -57,6 +58,11 @@ class ScanEventOut(ScanEventInDB):
     user_nickname: Optional[str] = None
     shop_name: Optional[str] = None
     nearby_shops: Optional[List[NearbyShopOut]] = None
+    # Total across xp_grants, kept for clients that don't need the
+    # breakdown. See xp_grants to tell "first find in this shop" (and
+    # other tiers) apart from a plain scan.
+    xp_awarded: Optional[int] = None
+    xp_grants: List[XPGrant] = []
 
     class Config:
         from_attributes = True

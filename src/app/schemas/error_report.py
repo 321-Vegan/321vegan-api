@@ -39,6 +39,7 @@ class ErrorReportOut(BaseModel):
     response: Optional[str] = None
     created_by: Optional[int] = None
     product: Optional[Product] = None
+    xp_awarded: Optional[int] = None
 
     class Config:
         from_attributes = True

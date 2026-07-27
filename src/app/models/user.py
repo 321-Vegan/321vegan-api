@@ -4,6 +4,7 @@ from sqlalchemy import Column, Integer, SmallInteger, String, Boolean, Enum, Dat
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.hybrid import hybrid_method
 from app.database.base_class import Base
+from app.xp_leveling import level_for_xp, xp_to_next_level as compute_xp_to_next_level
 
 
 class UserRole(str, enum.Enum):
@@ -30,6 +31,7 @@ class User(Base):
     supporter = Column(SmallInteger, default=0, nullable=False)
     subscription_bypass = Column(Boolean, default=False, nullable=False)
     scan_count = Column(Integer, default=0, server_default="0", nullable=False)
+    xp = Column(Integer, default=0, server_default="0", nullable=False)
     reset_token = Column(String, nullable=True)
     reset_token_expires = Column(DateTime, nullable=True)
     pending_email = Column(String, nullable=True)
@@ -53,6 +55,10 @@ class User(Base):
         "B12Intake", back_populates="user",
         cascade="all, delete",
         passive_deletes=True,)
+    xp_events = relationship(
+        "XPEvent", back_populates="user",
+        cascade="all, delete",
+        passive_deletes=True,)
 
     @property
     def nb_checkings(self) -> int:
@@ -72,6 +78,16 @@ class User(Base):
         latest = max(self.subscriptions,
                      key=lambda s: s.created_at or datetime.min)
         return latest.status
+
+    @property
+    def level(self) -> int:
+        """Current XP level, derived from total xp (see app.xp_leveling)."""
+        return level_for_xp(self.xp or 0)
+
+    @property
+    def xp_to_next_level(self) -> int:
+        """XP still needed to reach the next level."""
+        return compute_xp_to_next_level(self.xp or 0)
 
     @property
     def roles(self) -> list:

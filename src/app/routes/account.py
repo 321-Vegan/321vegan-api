@@ -5,13 +5,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.routes.dependencies import get_current_active_user, get_pagination_params, get_sort_by_params
-from app.crud import user_crud, b12_intake_crud
+from app.crud import user_crud, b12_intake_crud, xp_event_crud
 from app.crud.error_reports import error_report_crud
 from app.database.db import get_db
 from app.log import get_logger
 from app.models import User
 from app.schemas.b12_intake import B12IntakeOut
 from app.schemas.error_report import ErrorReportOutPaginated
+from app.schemas.xp import XPEventOutPaginated
 from app.schemas.user import UserOut, UserUpdateOwn
 from app.schemas.auth import EmailChangeRequest
 from app.security import get_password_hash, verify_password
@@ -167,6 +168,42 @@ def fetch_my_b12_intakes(
         List[B12IntakeOut]: The current user's B12 intakes.
     """
     return b12_intake_crud.get_by_user(db, active_user.id)
+
+
+@router.get(
+    "/xp-events",
+    response_model=Optional[XPEventOutPaginated],
+    status_code=status.HTTP_200_OK,
+)
+def fetch_my_xp_events(
+    db: Session = Depends(get_db),
+    pagination_params: Tuple[int, int] = Depends(get_pagination_params),
+    active_user: User = Depends(get_current_active_user),
+) -> Optional[XPEventOutPaginated]:
+    """
+    Fetch the current user's XP history, most recent first.
+
+    Backs a future "recent XP gains" screen in the app.
+
+    Parameters:
+        db (Session): The database session.
+        pagination_params (Tuple[int, int]): The pagination parameters (skip, limit).
+        active_user (User): The current active user.
+
+    Returns:
+        Optional[XPEventOutPaginated]: The current user's XP events with pagination data.
+    """
+    page, size = pagination_params
+    events, total = xp_event_crud.get_by_user(
+        db, active_user.id, skip=page, limit=size)
+    pages = (total + size - 1) // size
+    return {
+        "items": events,
+        "total": total,
+        "page": page,
+        "size": size,
+        "pages": pages,
+    }
 
 
 @router.patch("/email", status_code=status.HTTP_200_OK)

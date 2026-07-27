@@ -5,6 +5,7 @@ from app.crud.base import CRUDRepository
 from app.models.product import Product
 from app.models.user import User
 from app.schemas.product import ProductCreate, ProductUpdate
+from app.services.xp_service import award_xp, XPAction
 
 log = get_logger(__name__)
 
@@ -63,6 +64,20 @@ class ProductCRUDRepository(CRUDRepository):
         db.refresh(db_obj)
         if user:
             db.refresh(user)
+
+        # xp_awarded is transient (not a DB column) : only used to
+        # show the gain in the create response, see ProductOut.
+        xp_awarded = 0
+        if user:
+            action_key = (
+                XPAction.PRODUCT_INFO_WITH_PHOTO if db_obj.image
+                else XPAction.PRODUCT_INFO_NO_PHOTO
+            )
+            xp_awarded = award_xp(
+                db, user, action_key,
+                reference_type="product", reference_id=db_obj.id,
+            )
+        db_obj.xp_awarded = xp_awarded
         return db_obj
 
     def update(

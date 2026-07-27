@@ -16,6 +16,7 @@ from app.models.scan_event import ScanEvent
 from app.schemas.user import UserCreate, UserOutPaginated, UserOut, UserUpdate, UserFilters, UserUpdateOwn, UserPatch, ScanCountIncrement, ScanCountInit, ScanCountOut
 from typing import Literal
 from app.security import get_password_hash
+from app.services.xp_service import award_xp, XPAction
 
 log = get_logger(__name__)
 
@@ -131,7 +132,11 @@ def increment_my_scan_count(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
         )
-    return {"scan_count": new_count}
+    xp_awarded = award_xp(
+        db, current_user, XPAction.BASIC_SCAN,
+        reference_type="scan_count_increment", quantity=payload.count,
+    )
+    return {"scan_count": new_count, "xp_awarded": xp_awarded}
 
 
 @router.put("/me/scans", response_model=ScanCountOut, status_code=status.HTTP_200_OK)

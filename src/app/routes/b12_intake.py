@@ -14,6 +14,7 @@ from app.database.db import get_db
 from app.log import get_logger
 from app.models import User, ApiClient
 from app.schemas.b12_intake import B12IntakeCreate, B12IntakeOut
+from app.services.xp_service import award_xp, XPAction
 
 log = get_logger(__name__)
 
@@ -86,6 +87,11 @@ def create_b12_intake(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Couldn't create B12 intake. Error: {str(e)}",
         ) from e
+
+    intake.xp_awarded = award_xp(
+        db, current_user, XPAction.B12_INTAKE,
+        reference_type="b12_intake", reference_id=intake.id,
+    )
     return intake
 
 

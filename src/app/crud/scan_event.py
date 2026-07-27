@@ -48,5 +48,31 @@ class ScanEventCRUDRepository(CRUDRepository):
         
         return [{"ean": row.ean, "scan_count": row.scan_count} for row in result]
 
+    def ean_already_found_at_shop(
+        self, db: Session, ean: str, shop_id: int, exclude_event_id: int
+    ) -> bool:
+        """
+        Whether any user has already scanned `ean` at `shop_id` before,
+        other than `exclude_event_id` (the scan currently being
+        processed). Global across users — used for the "first to find
+        this product in this shop" community bonus, not a per-user check.
+
+        Parameters:
+            db (Session): The database session.
+            ean (str): The product EAN.
+            shop_id (int): The shop ID.
+            exclude_event_id (int): The scan event to exclude (the one
+                just created for this scan).
+
+        Returns:
+            bool: True if another scan of this product at this shop
+                already exists.
+        """
+        return db.query(self._model.id).filter(
+            self._model.ean == ean,
+            self._model.shop_id == shop_id,
+            self._model.id != exclude_event_id,
+        ).first() is not None
+
 
 scan_event_crud = ScanEventCRUDRepository(model=ScanEvent)

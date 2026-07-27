@@ -11,6 +11,7 @@ from app.database.db import get_db
 from app.log import get_logger
 from app.models import User
 from app.models.shop_review import ShopReviewStatus
+from app.services.xp_service import award_xp, XPAction
 from app.schemas.shop_review import (
     ShopReviewCreate,
     ShopReviewUpdate,
@@ -95,6 +96,12 @@ def create_review(
             status_code=status.HTTP_409_CONFLICT,
             detail="You have already reviewed this shop",
         )
+
+    xp_awarded = award_xp(
+        db, current_user, XPAction.SHOP_REVIEW,
+        reference_type="shop_review", reference_id=review.id,
+    )
+    review.xp_awarded = xp_awarded
 
     log.info(
         f"Shop review created: shop {review_in.shop_id} by user {current_user.id}")
