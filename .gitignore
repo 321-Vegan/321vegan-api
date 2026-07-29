@@ -1,6 +1,7 @@
 .idea
 .vscode
 .env
+.claude
 
 # DB Backups
 db_backups/

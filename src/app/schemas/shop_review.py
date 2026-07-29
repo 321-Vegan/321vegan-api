@@ -49,6 +49,7 @@ class ShopReviewOut(BaseModel):
     status: str
     created_at: datetime
     xp_awarded: Optional[int] = None
+    level: Optional[int] = None
 
     class Config:
         from_attributes = True

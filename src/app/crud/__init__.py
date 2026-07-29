@@ -17,6 +17,7 @@ from app.crud.product_not_found_report import product_not_found_report_crud
 from app.crud.shop_review import shop_review_crud
 from app.crud.b12_intake import b12_intake_crud
 from app.crud.xp import xp_action_type_crud, xp_event_crud
+from app.crud.avatar import avatar_crud, user_avatar_crud
 
 __all__ = [
     "user_crud",
@@ -39,4 +40,6 @@ __all__ = [
     "b12_intake_crud",
     "xp_action_type_crud",
     "xp_event_crud",
+    "avatar_crud",
+    "user_avatar_crud",
 ]

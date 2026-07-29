@@ -102,6 +102,7 @@ def create_review(
         reference_type="shop_review", reference_id=review.id,
     )
     review.xp_awarded = xp_awarded
+    review.level = current_user.level
 
     log.info(
         f"Shop review created: shop {review_in.shop_id} by user {current_user.id}")

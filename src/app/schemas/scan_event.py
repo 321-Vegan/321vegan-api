@@ -63,6 +63,7 @@ class ScanEventOut(ScanEventInDB):
     # other tiers) apart from a plain scan.
     xp_awarded: Optional[int] = None
     xp_grants: List[XPGrant] = []
+    level: Optional[int] = None
 
     class Config:
         from_attributes = True

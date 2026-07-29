@@ -1,5 +1,5 @@
 from typing import Tuple
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from app.crud.base import CRUDRepository
 from app.models.xp import XPActionType, XPEvent
 
@@ -35,7 +35,9 @@ class XPEventCRUDRepository(CRUDRepository):
         Returns:
             Tuple[list[XPEvent], int]: The events and the total count.
         """
-        query = db.query(self._model).filter(self._model.user_id == user_id)
+        query = db.query(self._model).options(
+            joinedload(self._model.action_type)
+        ).filter(self._model.user_id == user_id)
         total = query.count()
         items = query.order_by(self._model.created_at.desc()) \
             .offset(skip).limit(limit).all()

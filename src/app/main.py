@@ -42,6 +42,7 @@ from app.routes import (
     shop_review_router,
     b12_intake_router,
     xp_router,
+    avatar_router,
 )
 from app.log import get_logger
 
@@ -123,6 +124,7 @@ app.include_router(product_found_report_router, prefix="/product-found-reports",
 app.include_router(shop_review_router, prefix="/shop-reviews", tags=["shop_review"])
 app.include_router(b12_intake_router, prefix="/b12-intakes", tags=["b12_intake"])
 app.include_router(xp_router, prefix="/xp-actions", tags=["xp"])
+app.include_router(avatar_router, prefix="/avatars", tags=["avatar"])
 
 # Serve static files
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")

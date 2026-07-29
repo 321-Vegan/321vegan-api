@@ -136,7 +136,7 @@ def increment_my_scan_count(
         db, current_user, XPAction.BASIC_SCAN,
         reference_type="scan_count_increment", quantity=payload.count,
     )
-    return {"scan_count": new_count, "xp_awarded": xp_awarded}
+    return {"scan_count": new_count, "xp_awarded": xp_awarded, "level": current_user.level}
 
 
 @router.put("/me/scans", response_model=ScanCountOut, status_code=status.HTTP_200_OK)

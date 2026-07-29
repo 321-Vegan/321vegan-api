@@ -25,6 +25,7 @@ class B12IntakeInDB(B12IntakeBase):
 
 class B12IntakeOut(B12IntakeInDB):
     xp_awarded: Optional[int] = None
+    level: Optional[int] = None
 
     class Config:
         from_attributes = True

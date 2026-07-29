@@ -22,6 +22,42 @@ log = get_logger(__name__)
 router = APIRouter(dependencies=[Depends(get_current_active_user_or_client)])
 
 
+def _award_first_in_shop_bonus(
+    db: Session, event: ScanEvent, scan_user: User
+) -> Optional[XPGrant]:
+    """
+    Award the Vegandex "first to find this product in this shop" bonus,
+    if `event` has a shop_id and nobody has scanned this product there
+    before.
+
+    Called both right after creation (when the shop was already resolved
+    inline) and from confirm_shop() (when shop resolution needed user
+    disambiguation, so shop_id wasn't known yet at creation time) — the
+    check can only run once shop_id is actually set.
+
+    Parameters:
+        db (Session): The database session.
+        event (ScanEvent): The scan event, with shop_id already set.
+        scan_user (User): The user to credit.
+
+    Returns:
+        Optional[XPGrant]: The grant if awarded, else None.
+    """
+    if not event.shop_id:
+        return None
+    if scan_event_crud.ean_already_found_at_shop(
+        db, event.ean, event.shop_id, exclude_event_id=event.id,
+    ):
+        return None
+    xp = award_xp(
+        db, scan_user, XPAction.VEGANDEX_SCAN_FIRST_IN_SHOP,
+        reference_type="scan_event", reference_id=event.id,
+    )
+    if not xp:
+        return None
+    return XPGrant(action_key=XPAction.VEGANDEX_SCAN_FIRST_IN_SHOP, xp=xp)
+
+
 @router.get(
     "/", response_model=List[Optional[ScanEventOut]], status_code=status.HTTP_200_OK,
     dependencies=[Depends(RoleChecker(["admin"]))],
@@ -271,6 +307,7 @@ async def create_scan_event(
     # is tied to a real user (API-client-only scans with no user_id
     # don't earn anything).
     xp_grants = []
+    scan_user = None
     if event.user_id:
         scan_user = user_crud.get_one(db, User.id == event.user_id)
         if scan_user:
@@ -282,25 +319,20 @@ async def create_scan_event(
                 xp_grants.append(XPGrant(
                     action_key=XPAction.VEGANDEX_SCAN, xp=vegandex_xp))
 
-            # Community bonus: nobody has scanned this product at this
-            # shop before — global across users, not a per-user "have I
-            # seen this here" check.
-            if event.shop_id and not scan_event_crud.ean_already_found_at_shop(
-                db, event.ean, event.shop_id, exclude_event_id=event.id,
-            ):
-                first_in_shop_xp = award_xp(
-                    db, scan_user, XPAction.VEGANDEX_SCAN_FIRST_IN_SHOP,
-                    reference_type="scan_event", reference_id=event.id,
-                )
-                if first_in_shop_xp:
-                    xp_grants.append(XPGrant(
-                        action_key=XPAction.VEGANDEX_SCAN_FIRST_IN_SHOP,
-                        xp=first_in_shop_xp))
+            # Only resolvable here if the shop was already known (nearby
+            # DB match or a single unambiguous OSM hit). When it needs
+            # user disambiguation, shop_id is still None at this point —
+            # confirm_shop() evaluates the bonus once it gets set.
+            first_in_shop_grant = _award_first_in_shop_bonus(
+                db, event, scan_user)
+            if first_in_shop_grant:
+                xp_grants.append(first_in_shop_grant)
 
     # Build response with nearby shops (excluding the one already linked)
     response = ScanEventOut.model_validate(event)
     response.xp_grants = xp_grants
     response.xp_awarded = sum(grant.xp for grant in xp_grants)
+    response.level = scan_user.level if scan_user else None
     if nearby_shops:
         result = []
         for shop in nearby_shops:
@@ -423,46 +455,60 @@ def confirm_shop(
             detail=f"Scan event with id {id} not found",
         )
 
+    # Captured before resolving the shop: the first-in-shop bonus only
+    # applies the first time this event's shop_id becomes known, not on
+    # a re-confirmation of an already-linked event.
+    had_shop_before = event.shop_id is not None
+
     # Check if this shop already exists in DB
     existing_shop = shop_crud.get_by_osm_id(db, body.osm_id)
     if existing_shop:
         event = scan_event_crud.update(
             db, event, ScanEventUpdate(shop_id=existing_shop.id))
-        return event
-
-    # Find the OSM data from the stored lookup response
-    if not event.lookup_api_response:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No OSM lookup data stored for this scan event",
-        )
-
-    osm_shops_data = json.loads(event.lookup_api_response)
-    osm_shop_data = next(
-        (s for s in osm_shops_data if s.get("osm_id") == body.osm_id), None)
-
-    if osm_shop_data is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Shop with osm_id {body.osm_id} not found in lookup response",
-        )
-
-    # Create the shop in DB
-    try:
-        new_shop = shop_crud.create(db, ShopCreate(**osm_shop_data))
-    except IntegrityError:
-        db.rollback()
-        # Race condition — another request created it
-        new_shop = shop_crud.get_by_osm_id(db, body.osm_id)
-        if new_shop is None:
+    else:
+        # Find the OSM data from the stored lookup response
+        if not event.lookup_api_response:
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to create shop",
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No OSM lookup data stored for this scan event",
             )
 
-    event = scan_event_crud.update(
-        db, event, ScanEventUpdate(shop_id=new_shop.id))
-    return event
+        osm_shops_data = json.loads(event.lookup_api_response)
+        osm_shop_data = next(
+            (s for s in osm_shops_data if s.get("osm_id") == body.osm_id), None)
+
+        if osm_shop_data is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Shop with osm_id {body.osm_id} not found in lookup response",
+            )
+
+        # Create the shop in DB
+        try:
+            new_shop = shop_crud.create(db, ShopCreate(**osm_shop_data))
+        except IntegrityError:
+            db.rollback()
+            # Race condition — another request created it
+            new_shop = shop_crud.get_by_osm_id(db, body.osm_id)
+            if new_shop is None:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to create shop",
+                )
+
+        event = scan_event_crud.update(
+            db, event, ScanEventUpdate(shop_id=new_shop.id))
+
+    response = ScanEventOut.model_validate(event)
+    if not had_shop_before and event.user_id:
+        scan_user = user_crud.get_one(db, User.id == event.user_id)
+        if scan_user:
+            grant = _award_first_in_shop_bonus(db, event, scan_user)
+            if grant:
+                response.xp_grants = [grant]
+                response.xp_awarded = grant.xp
+                response.level = scan_user.level
+    return response
 
 
 @router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(RoleChecker(["admin"]))])

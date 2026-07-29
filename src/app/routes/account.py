@@ -13,10 +13,14 @@ from app.models import User
 from app.schemas.b12_intake import B12IntakeOut
 from app.schemas.error_report import ErrorReportOutPaginated
 from app.schemas.xp import XPEventOutPaginated
-from app.schemas.user import UserOut, UserUpdateOwn
+from app.schemas.user import UserOut, UserUpdateOwn, DailyCheckinOut
 from app.schemas.auth import EmailChangeRequest
 from app.security import get_password_hash, verify_password
 from app.services.email import email_service
+from app.services.xp_service import award_xp, XPAction, DAILY_LOGIN_XP_CAP_DAYS
+from app.services import avatar_service
+from app.crud import avatar_crud, user_avatar_crud
+from app.schemas.avatar import AvatarOut, AvatarPullOut
 
 log = get_logger(__name__)
 
@@ -74,11 +78,19 @@ def update_current_active_user(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Current active user not found. Cannot update.",
         )
+
+    dict_user_update = user_update.model_dump(
+        exclude_unset=True
+    )  # exclude_unset=True -
+    # do not update fields with None
+    if dict_user_update.get('avatar') is not None and not avatar_service.can_equip(
+        db, active_user.id, dict_user_update['avatar']
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Avatar '{dict_user_update['avatar']}' is not unlocked",
+        )
     try:
-        dict_user_update = user_update.model_dump(
-            exclude_unset=True
-        )  # exclude_unset=True -
-        # do not update fields with None
         if 'password' in dict_user_update:
             dict_user_update['password'] = get_password_hash(
                 user_update.password)
@@ -204,6 +216,125 @@ def fetch_my_xp_events(
         "size": size,
         "pages": pages,
     }
+
+
+@router.post(
+    "/check-in",
+    response_model=DailyCheckinOut,
+    status_code=status.HTTP_200_OK,
+)
+def daily_check_in(
+    db: Session = Depends(get_db),
+    active_user: User = Depends(get_current_active_user),
+) -> DailyCheckinOut:
+    """
+    Record a daily check-in and award streak XP.
+
+    Call once per app session/day. Calling again the same day is a safe
+    no-op: the streak and XP are returned unchanged, nothing extra is
+    awarded. Missing a day resets the streak to 1 on the next check-in.
+
+    Parameters:
+        db (Session): The database session.
+        active_user (User): The current active user.
+
+    Returns:
+        DailyCheckinOut: The user's updated streak and any XP awarded.
+
+    Raises:
+        HTTPException: If the user is not found.
+    """
+    result = user_crud.record_daily_checkin(db, active_user.id)
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    xp_awarded = 0
+    if result["is_new_day"]:
+        quantity = min(result["streak_count"], DAILY_LOGIN_XP_CAP_DAYS)
+        xp_awarded = award_xp(
+            db, active_user, XPAction.DAILY_LOGIN,
+            reference_type="login_streak", quantity=quantity,
+        )
+
+    return {
+        "streak_count": result["streak_count"],
+        "xp_awarded": xp_awarded,
+        "level": active_user.level,
+    }
+
+
+@router.get(
+    "/avatars",
+    response_model=List[Optional[AvatarOut]],
+    status_code=status.HTTP_200_OK,
+)
+def fetch_my_avatars(
+    db: Session = Depends(get_db),
+    active_user: User = Depends(get_current_active_user),
+) -> List[Optional[AvatarOut]]:
+    """
+    Fetch the full avatar catalog with ownership for the current user.
+
+    Every avatar is returned — including inactive ones, so an avatar a
+    user already unlocked doesn't vanish from their collection just
+    because it was later retired — annotated with `owned` (true for
+    default avatars and any premium ones this user has unlocked). Backs
+    a collection screen showing locked and unlocked avatars together,
+    the same shape as the app's existing badges grid.
+
+    Parameters:
+        db (Session): The database session.
+        active_user (User): The current active user.
+
+    Returns:
+        List[Optional[AvatarOut]]: The catalog, with `owned` set per avatar.
+    """
+    owned_ids = user_avatar_crud.get_owned_avatar_ids(db, active_user.id)
+    avatars = []
+    for avatar in avatar_crud.get_all(db):
+        out = AvatarOut.model_validate(avatar)
+        out.owned = avatar.is_default or avatar.id in owned_ids
+        avatars.append(out)
+    return avatars
+
+
+@router.post(
+    "/avatars/unlock",
+    response_model=AvatarPullOut,
+    status_code=status.HTTP_200_OK,
+)
+def unlock_avatar(
+    db: Session = Depends(get_db),
+    active_user: User = Depends(get_current_active_user),
+) -> AvatarPullOut:
+    """
+    Spend one jeton on a weighted-random avatar pull.
+
+    Duplicates are allowed: a pull can land on an avatar the user
+    already owns, still spending the jeton (is_new=False in that case)
+    so the configured odds never shift as a collection grows.
+
+    Parameters:
+        db (Session): The database session.
+        active_user (User): The current active user.
+
+    Returns:
+        AvatarPullOut: The avatar won, whether it was new, and the
+            user's remaining jeton balance.
+
+    Raises:
+        HTTPException: 402 if the user has no jetons to spend.
+    """
+    result = avatar_service.pull_avatar(db, active_user)
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail="Not enough jetons to unlock an avatar",
+        )
+    return result
 
 
 @router.patch("/email", status_code=status.HTTP_200_OK)

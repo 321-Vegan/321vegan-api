@@ -1,6 +1,6 @@
 import enum
 from datetime import datetime
-from sqlalchemy import Column, Integer, SmallInteger, String, Boolean, Enum, DateTime
+from sqlalchemy import Column, Integer, SmallInteger, String, Boolean, Enum, DateTime, Date
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.hybrid import hybrid_method
 from app.database.base_class import Base
@@ -32,6 +32,10 @@ class User(Base):
     subscription_bypass = Column(Boolean, default=False, nullable=False)
     scan_count = Column(Integer, default=0, server_default="0", nullable=False)
     xp = Column(Integer, default=0, server_default="0", nullable=False)
+    login_streak_count = Column(
+        Integer, default=0, server_default="0", nullable=False)
+    last_login_streak_date = Column(Date, nullable=True)
+    jetons = Column(Integer, default=0, server_default="0", nullable=False)
     reset_token = Column(String, nullable=True)
     reset_token_expires = Column(DateTime, nullable=True)
     pending_email = Column(String, nullable=True)
@@ -57,6 +61,10 @@ class User(Base):
         passive_deletes=True,)
     xp_events = relationship(
         "XPEvent", back_populates="user",
+        cascade="all, delete",
+        passive_deletes=True,)
+    unlocked_avatars = relationship(
+        "UserAvatar", back_populates="user",
         cascade="all, delete",
         passive_deletes=True,)
 

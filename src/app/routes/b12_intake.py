@@ -92,6 +92,7 @@ def create_b12_intake(
         db, current_user, XPAction.B12_INTAKE,
         reference_type="b12_intake", reference_id=intake.id,
     )
+    intake.level = current_user.level
     return intake
 
 

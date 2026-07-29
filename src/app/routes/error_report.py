@@ -221,6 +221,7 @@ def create_error_report(
             reference_type="error_report", reference_id=error_report.id,
         )
     error_report.xp_awarded = xp_awarded
+    error_report.level = user.level if user else None
     return error_report
 
 

@@ -25,6 +25,7 @@ from app.routes.product_found_report import router as product_found_report_route
 from app.routes.shop_review import router as shop_review_router
 from app.routes.b12_intake import router as b12_intake_router
 from app.routes.xp import router as xp_router
+from app.routes.avatar import router as avatar_router
 
 
 __all__ = [
@@ -55,4 +56,5 @@ __all__ = [
     "shop_review_router",
     "b12_intake_router",
     "xp_router",
+    "avatar_router",
 ]

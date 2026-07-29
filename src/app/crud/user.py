@@ -320,4 +320,47 @@ class UserCRUDRepository(CRUDRepository):
             db.refresh(user)
         return user.scan_count
 
+    def record_daily_checkin(self, db: Session, user_id: int) -> Optional[dict]:
+        """
+        Record a daily check-in and update the user's login streak.
+
+        - Already checked in today: no-op, returns the current streak.
+        - Last check-in was yesterday: streak increments.
+        - Any bigger gap (or first-ever check-in): streak resets to 1.
+
+        Parameters:
+            db (Session): The database session.
+            user_id (int): The ID of the user.
+
+        Returns:
+            Optional[dict]: {"streak_count": int, "is_new_day": bool}, or
+                None if the user was not found.
+        """
+        user = self.get_one(db, self._model.id == user_id)
+        if user is None:
+            return None
+
+        # Lock the row: without this, two near-simultaneous check-ins
+        # (e.g. two devices on the same account) could both read
+        # last_login_streak_date as "not today" and both increment the
+        # streak, double-counting one day.
+        db.query(self._model).filter(
+            self._model.id == user_id).with_for_update().one()
+
+        today = datetime.now().date()
+        if user.last_login_streak_date == today:
+            return {"streak_count": user.login_streak_count, "is_new_day": False}
+
+        if user.last_login_streak_date == today - timedelta(days=1):
+            user.login_streak_count = (user.login_streak_count or 0) + 1
+        else:
+            user.login_streak_count = 1
+
+        user.last_login_streak_date = today
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        return {"streak_count": user.login_streak_count, "is_new_day": True}
+
+
 user_crud = UserCRUDRepository(model=User)

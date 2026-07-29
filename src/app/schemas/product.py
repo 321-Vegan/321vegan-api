@@ -65,6 +65,7 @@ class ProductOut(BaseModel):
     last_requested_by: Optional[str] = None
     image: Optional[str] = None
     xp_awarded: Optional[int] = None
+    level: Optional[int] = None
 
     class Config:
         from_attributes = True

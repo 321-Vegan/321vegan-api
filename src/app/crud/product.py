@@ -65,7 +65,7 @@ class ProductCRUDRepository(CRUDRepository):
         if user:
             db.refresh(user)
 
-        # xp_awarded is transient (not a DB column) : only used to
+        # xp_awarded/level are transient (not DB columns): only used to
         # show the gain in the create response, see ProductOut.
         xp_awarded = 0
         if user:
@@ -78,6 +78,7 @@ class ProductCRUDRepository(CRUDRepository):
                 reference_type="product", reference_id=db_obj.id,
             )
         db_obj.xp_awarded = xp_awarded
+        db_obj.level = user.level if user else None
         return db_obj
 
     def update(
