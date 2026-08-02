@@ -210,6 +210,13 @@ async def create_scan_event(
             )
             nearby_shops = [s for s in all_nearby if s.id != existing_shop.id]
         else:
+            # Release the DB connection back to the pool before the external
+            # HTTP call below: nothing has been written yet (reads only), and
+            # SQLAlchemy otherwise keeps the connection checked out for the
+            # whole open transaction, tying it up for the entire OSM lookup
+            # (up to its 5s timeout) and starving the pool under load.
+            db.rollback()
+
             # Query OpenStreetMap for ALL nearby shops
             osm_shops_data = await osm_service.find_nearby_shops(
                 event_create.latitude,
