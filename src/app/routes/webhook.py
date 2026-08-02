@@ -1,7 +1,7 @@
 import base64
 import json
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database.db import get_db
@@ -31,8 +31,14 @@ async def apple_webhook(
         return {"status": "ok"}
 
     except Exception as e:
+        # Unexpected/infra failure (e.g. DB pool timeout): return non-2xx so
+        # Apple retries delivery instead of considering this notification
+        # handled and dropping it for good.
         log.error(f"Apple webhook error: {str(e)}")
-        return {"status": "ok"}
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Temporary processing error",
+        ) from e
 
 
 @router.post("/google", status_code=status.HTTP_200_OK)
@@ -54,5 +60,10 @@ async def google_webhook(
         return {"status": "ok"}
 
     except Exception as e:
+        # Unexpected/infra failure: return non-2xx so Google retries
+        # delivery instead of the event being silently dropped.
         log.error(f"Google webhook error: {str(e)}")
-        return {"status": "ok"}
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Temporary processing error",
+        ) from e

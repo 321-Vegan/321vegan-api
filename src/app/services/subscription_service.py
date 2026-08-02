@@ -97,7 +97,15 @@ class SubscriptionService:
         """
         Process an Apple App Store Server Notification V2.
         The payload is a signed JWS that we decode and verify.
+
+        Returns False for a notification we understood but have nothing to
+        do with (unverifiable signature, unknown subscription) — the caller
+        should still ack these with 200, retrying wouldn't help. Raises on
+        unexpected/infra failures (e.g. a DB timeout) so the caller can
+        return a non-2xx and let Apple retry delivery instead of the event
+        being silently dropped.
         """
+        original_tx_id = None
         try:
             notification = None
             root_certs = self._load_apple_root_certificates()
@@ -124,6 +132,7 @@ class SubscriptionService:
             )
 
             original_tx_id = transaction_info.originalTransactionId
+            log.info(f"Apple webhook: processing {notification_type} for original_transaction_id={original_tx_id}")
             subscription = subscription_crud.get_by_original_transaction_id(db, original_tx_id)
             if not subscription:
                 log.warning(f"Apple webhook: subscription not found for {original_tx_id}")
@@ -163,8 +172,10 @@ class SubscriptionService:
             return True
 
         except Exception as e:
-            log.error(f"Apple webhook processing failed: {str(e)}")
-            return False
+            log.error(
+                f"Apple webhook processing failed (original_transaction_id={original_tx_id}): {str(e)}"
+            )
+            raise
 
     # ──────────────────────────────────────────────
     # Google Play Developer API
@@ -215,7 +226,14 @@ class SubscriptionService:
         """
         Process a Google Real-Time Developer Notification.
         message_data is the decoded Pub/Sub message data.
+
+        Returns False for a notification we understood but have nothing to
+        do with (no purchase token, unknown subscription) — the caller
+        should still ack these with 200. Raises on unexpected/infra
+        failures so the caller can return a non-2xx and let Google retry
+        instead of the event being silently dropped.
         """
+        original_tx_id = None
         try:
             notification = message_data.get("subscriptionNotification")
             if not notification:
@@ -233,6 +251,7 @@ class SubscriptionService:
                 return False
 
             original_tx_id = verified["original_transaction_id"]
+            log.info(f"Google webhook: processing notification_type={notification_type} for original_transaction_id={original_tx_id}")
             subscription = subscription_crud.get_by_original_transaction_id(db, original_tx_id)
             if not subscription:
                 log.warning(f"Google webhook: subscription not found for {original_tx_id}")
@@ -255,8 +274,10 @@ class SubscriptionService:
             return True
 
         except Exception as e:
-            log.error(f"Google webhook processing failed: {str(e)}")
-            return False
+            log.error(
+                f"Google webhook processing failed (original_transaction_id={original_tx_id}): {str(e)}"
+            )
+            raise
 
     # ──────────────────────────────────────────────
     # Shared verification flow
