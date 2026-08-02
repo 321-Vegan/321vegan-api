@@ -4,6 +4,7 @@ from typing import Optional
 
 from appstoreserverlibrary.api_client import AppStoreServerAPIClient
 from appstoreserverlibrary.models.Environment import Environment
+from appstoreserverlibrary.models.Status import Status as AppleStatus
 from appstoreserverlibrary.signed_data_verifier import SignedDataVerifier
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -20,6 +21,30 @@ from app.models.subscription import (
 from app.log import get_logger
 
 log = get_logger(__name__)
+
+# Apple's per-subscription status (GetAllSubscriptionStatuses) mapped to ours.
+APPLE_STATUS_MAP = {
+    AppleStatus.ACTIVE: SubscriptionStatus.ACTIVE,
+    AppleStatus.EXPIRED: SubscriptionStatus.EXPIRED,
+    AppleStatus.BILLING_RETRY: SubscriptionStatus.GRACE_PERIOD,
+    AppleStatus.BILLING_GRACE_PERIOD: SubscriptionStatus.GRACE_PERIOD,
+    AppleStatus.REVOKED: SubscriptionStatus.CANCELLED,
+}
+
+# Google's subscriptionState (subscriptionsv2.get) mapped to ours. CANCELED
+# means auto-renew is off but the subscriber keeps access until expiry, so it
+# still maps to ACTIVE -- same semantics as Apple's DID_CHANGE_RENEWAL_STATUS.
+GOOGLE_STATE_MAP = {
+    "SUBSCRIPTION_STATE_ACTIVE": SubscriptionStatus.ACTIVE,
+    "SUBSCRIPTION_STATE_CANCELED": SubscriptionStatus.ACTIVE,
+    "SUBSCRIPTION_STATE_IN_GRACE_PERIOD": SubscriptionStatus.GRACE_PERIOD,
+    "SUBSCRIPTION_STATE_ON_HOLD": SubscriptionStatus.GRACE_PERIOD,
+    "SUBSCRIPTION_STATE_PAUSED": SubscriptionStatus.PAUSED,
+    "SUBSCRIPTION_STATE_EXPIRED": SubscriptionStatus.EXPIRED,
+}
+
+# A drift in expires_at smaller than this is not worth flagging (clock/rounding noise).
+DIAGNOSTICS_EXPIRY_DRIFT_TOLERANCE_SECONDS = 60
 
 
 class SubscriptionService:
@@ -369,6 +394,146 @@ class SubscriptionService:
             f"platform={platform}, status={subscription.status}, expires_at={subscription.expires_at}"
         )
         return subscription
+
+    # ──────────────────────────────────────────────
+    # Diagnostics (admin)
+    # ──────────────────────────────────────────────
+
+    def run_subscription_diagnostics(self, db: Session) -> list[dict]:
+        """
+        Compare every active/grace_period subscription against the
+        platform's live, authoritative status and report drift. Read-only
+        -- does not write any corrections, just reports.
+
+        One external API call per subscription, so this is meant to be
+        triggered on demand by an admin, not run on a hot path or scheduled
+        at high frequency.
+
+        Limitation: Apple's and Google's APIs only let us look up a
+        purchase we already know the identifier for. A purchase that
+        exists on their side but was never recorded in our DB at all (e.g.
+        a missed initial notification with no matching /verify call) is
+        invisible to this check.
+        """
+        candidates = db.query(Subscription).filter(
+            Subscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.GRACE_PERIOD])
+        ).all()
+
+        # Release the DB connection back to the pool before the external
+        # API loop below: everything we need from `candidates` is already
+        # loaded, and each iteration can take a while (Apple verification
+        # includes an online OCSP check)
+        db.close()
+
+        issues = []
+        for sub in candidates:
+            if sub.platform == SubscriptionPlatform.APPLE:
+                live = self._get_apple_live_status(sub.original_transaction_id)
+            elif sub.platform == SubscriptionPlatform.GOOGLE:
+                if not sub.purchase_token:
+                    issues.append(self._diagnostic_issue(sub, "missing_purchase_token"))
+                    continue
+                live = self._get_google_live_status(sub.purchase_token, sub.product_id)
+            else:
+                continue
+
+            if live is None:
+                issues.append(self._diagnostic_issue(sub, "could_not_verify"))
+                continue
+
+            status_drift = live["status"] is not None and live["status"] != sub.status
+            expiry_drift = (
+                live["expires_at"] is not None and sub.expires_at is not None and
+                abs((live["expires_at"].replace(tzinfo=None) - sub.expires_at).total_seconds())
+                > DIAGNOSTICS_EXPIRY_DRIFT_TOLERANCE_SECONDS
+            )
+
+            if status_drift or expiry_drift:
+                issues.append(self._diagnostic_issue(
+                    sub,
+                    "status_drift" if status_drift else "expiry_drift",
+                    live_status=live["status"].value if live["status"] else live["raw_status"],
+                    live_expires_at=live["expires_at"],
+                ))
+
+        return issues
+
+    @staticmethod
+    def _diagnostic_issue(
+        sub: Subscription, issue: str,
+        live_status: Optional[str] = None, live_expires_at: Optional[datetime] = None,
+    ) -> dict:
+        return {
+            "subscription_id": sub.id,
+            "user_id": sub.user_id,
+            "platform": sub.platform.value,
+            "original_transaction_id": sub.original_transaction_id,
+            "issue": issue,
+            "local_status": sub.status.value,
+            "local_expires_at": sub.expires_at.isoformat() if sub.expires_at else None,
+            "live_status": live_status,
+            "live_expires_at": live_expires_at.isoformat() if live_expires_at else None,
+        }
+
+    def _get_apple_live_status(self, original_transaction_id: str) -> Optional[dict]:
+        """Apple's current status for one subscription, trying PRODUCTION then SANDBOX."""
+        private_key = self._read_apple_private_key()
+        if not private_key:
+            return None
+        root_certs = self._load_apple_root_certificates()
+
+        for environment in (Environment.PRODUCTION, Environment.SANDBOX):
+            try:
+                client = AppStoreServerAPIClient(
+                    signing_key=private_key,
+                    key_id=settings.APPLE_KEY_ID,
+                    issuer_id=settings.APPLE_ISSUER_ID,
+                    bundle_id=settings.APPLE_BUNDLE_ID,
+                    environment=environment,
+                )
+                response = client.get_all_subscription_statuses(original_transaction_id)
+            except Exception as e:
+                log.debug(f"get_all_subscription_statuses failed on {environment}: {e}")
+                continue
+
+            verifier = SignedDataVerifier(
+                root_certificates=root_certs,
+                enable_online_checks=True,
+                environment=environment,
+                bundle_id=settings.APPLE_BUNDLE_ID,
+                app_apple_id=settings.APPLE_APP_ID,
+            )
+
+            for group in response.data or []:
+                for item in group.lastTransactions or []:
+                    if item.originalTransactionId != original_transaction_id:
+                        continue
+                    try:
+                        decoded = verifier.verify_and_decode_signed_transaction(item.signedTransactionInfo)
+                    except Exception as e:
+                        log.debug(f"could not decode transaction for {original_transaction_id}: {e}")
+                        continue
+                    expires_at = (
+                        datetime.fromtimestamp(decoded.expiresDate / 1000, tz=timezone.utc)
+                        if decoded.expiresDate else None
+                    )
+                    return {
+                        "status": APPLE_STATUS_MAP.get(item.status),
+                        "raw_status": item.status.name if item.status else None,
+                        "expires_at": expires_at,
+                    }
+        return None
+
+    def _get_google_live_status(self, purchase_token: str, product_id: str) -> Optional[dict]:
+        verified = self.verify_google_purchase(purchase_token, product_id)
+        if not verified:
+            return None
+        raw_state = verified.get("subscription_state")
+        return {
+            "status": GOOGLE_STATE_MAP.get(raw_state),
+            "raw_status": raw_state,
+            "expires_at": verified.get("expires_date"),
+        }
 
     # ──────────────────────────────────────────────
     # Helpers

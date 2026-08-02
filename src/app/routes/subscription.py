@@ -1,9 +1,15 @@
 import math
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
-from app.routes.dependencies import get_current_active_user, get_current_client, get_pagination_params
+from app.routes.dependencies import (
+    get_current_active_user,
+    get_current_client,
+    get_current_superuser,
+    get_pagination_params,
+)
 from app.crud.subscription import subscription_crud
 from app.database.db import get_db
 from app.log import get_logger
@@ -97,3 +103,24 @@ def get_my_subscription_events(
         size=size,
         pages=pages,
     )
+
+
+@router.get("/admin/diagnostics", status_code=status.HTTP_200_OK)
+def get_subscription_diagnostics(
+    db: Session = Depends(get_db),
+    _admin: User = Depends(get_current_superuser),
+):
+    """
+    Admin-only: compare every active/grace_period subscription against its
+    platform's live status (Apple/Google) and report any drift. Read-only.
+
+    Slow by nature (one external API call per subscription) -- call on
+    demand, don't poll it. See run_subscription_diagnostics() docstring for
+    what it can and can't catch.
+    """
+    issues = subscription_service.run_subscription_diagnostics(db)
+    return {
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "issue_count": len(issues),
+        "issues": issues,
+    }
