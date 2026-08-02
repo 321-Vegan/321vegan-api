@@ -40,6 +40,13 @@ class Subscription(Base):
     original_transaction_id = Column(
         String, unique=True, nullable=False, index=True)
     transaction_id = Column(String, nullable=True)
+    # Apple's notificationUUID of the last successfully processed webhook.
+    # Used for idempotency instead of transaction_id: Apple reuses the same
+    # transactionId across different notification types when no new
+    # transaction occurred (e.g. EXPIRED reuses the prior DID_RENEW's
+    # transactionId), so keying on transaction_id caused those follow-up
+    # notifications to be misdetected as duplicates and skipped.
+    last_notification_uuid = Column(String, nullable=True)
     purchase_token = Column(String, nullable=True)
     product_id = Column(String, nullable=False)
     status = Column(Enum(SubscriptionStatus),

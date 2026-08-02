@@ -138,10 +138,17 @@ class SubscriptionService:
                 log.warning(f"Apple webhook: subscription not found for {original_tx_id}")
                 return False
 
-            # Idempotency: skip if we already processed this transaction
-            incoming_tx_id = str(transaction_info.transactionId)
-            if subscription.transaction_id == incoming_tx_id:
-                log.info(f"Apple webhook: already processed transaction {incoming_tx_id}, skipping")
+            # Idempotency: skip if we already processed this exact
+            # notification delivery. Keyed on Apple's notificationUUID
+            # (unique per delivery), not transactionId -- Apple reuses the
+            # same transactionId across different notification types when
+            # no new transaction occurred (e.g. EXPIRED carries the prior
+            # DID_RENEW's transactionId), so keying on transactionId caused
+            # those follow-up notifications to be misdetected as duplicates
+            # and silently skipped, leaving status stuck at ACTIVE forever.
+            incoming_notification_uuid = notification.notificationUUID
+            if subscription.last_notification_uuid == incoming_notification_uuid:
+                log.info(f"Apple webhook: already processed notification {incoming_notification_uuid}, skipping")
                 return True
 
             event_type, new_status = self._map_apple_notification(
@@ -168,6 +175,10 @@ class SubscriptionService:
                         "subtype": getattr(notification, "subtype", None),
                     },
                 )
+
+            subscription.last_notification_uuid = incoming_notification_uuid
+            db.add(subscription)
+            db.commit()
 
             return True
 
