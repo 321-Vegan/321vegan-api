@@ -1,5 +1,6 @@
 import math
 from datetime import datetime, timezone
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
@@ -14,6 +15,7 @@ from app.crud.subscription import subscription_crud
 from app.database.db import get_db
 from app.log import get_logger
 from app.models import User
+from app.models.subscription import SubscriptionPlatform
 from app.schemas.subscription import (
     SubscriptionVerifyRequest,
     SubscriptionOut,
@@ -109,16 +111,21 @@ def get_my_subscription_events(
 def get_subscription_diagnostics(
     db: Session = Depends(get_db),
     _admin: User = Depends(get_current_superuser),
+    platform: Optional[SubscriptionPlatform] = Query(None, description="Restrict to one platform (apple/google)."),
+    limit: Optional[int] = Query(None, ge=1, description="Max subscriptions to check, to avoid a long-running request."),
 ):
     """
-    Admin-only: compare every active/grace_period subscription against its
+    Admin-only: compare active/grace_period subscriptions against their
     platform's live status (Apple/Google) and report any drift. Read-only.
 
-    Slow by nature (one external API call per subscription) -- call on
-    demand, don't poll it. See run_subscription_diagnostics() docstring for
-    what it can and can't catch.
+    Slow by nature (one external API call per subscription, plus an OCSP
+    check for Apple) -- at real subscriber counts a full unfiltered run can
+    take minutes and risk the request itself timing out. Use `platform`
+    and/or `limit` to run it in smaller batches instead of all at once.
+    See run_subscription_diagnostics() docstring for what it can and can't
+    catch.
     """
-    issues = subscription_service.run_subscription_diagnostics(db)
+    issues = subscription_service.run_subscription_diagnostics(db, platform=platform, limit=limit)
     return {
         "checked_at": datetime.now(timezone.utc).isoformat(),
         "issue_count": len(issues),

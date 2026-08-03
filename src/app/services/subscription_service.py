@@ -399,15 +399,21 @@ class SubscriptionService:
     # Diagnostics (admin)
     # ──────────────────────────────────────────────
 
-    def run_subscription_diagnostics(self, db: Session) -> list[dict]:
+    def run_subscription_diagnostics(
+        self, db: Session,
+        platform: Optional[SubscriptionPlatform] = None,
+        limit: Optional[int] = None,
+    ) -> list[dict]:
         """
-        Compare every active/grace_period subscription against the
-        platform's live, authoritative status and report drift. Read-only
-        -- does not write any corrections, just reports.
+        Compare active/grace_period subscriptions against the platform's
+        live, authoritative status and report drift. Read-only -- does not
+        write any corrections, just reports.
 
         One external API call per subscription, so this is meant to be
         triggered on demand by an admin, not run on a hot path or scheduled
-        at high frequency.
+        at high frequency. Pass `platform` and/or `limit` to keep a single
+        run short at real subscriber counts -- unfiltered, this can take
+        minutes and risk the request itself timing out.
 
         Limitation: Apple's and Google's APIs only let us look up a
         purchase we already know the identifier for. A purchase that
@@ -415,9 +421,14 @@ class SubscriptionService:
         a missed initial notification with no matching /verify call) is
         invisible to this check.
         """
-        candidates = db.query(Subscription).filter(
+        query = db.query(Subscription).filter(
             Subscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.GRACE_PERIOD])
-        ).all()
+        )
+        if platform is not None:
+            query = query.filter(Subscription.platform == platform)
+        if limit is not None:
+            query = query.limit(limit)
+        candidates = query.all()
 
         # Release the DB connection back to the pool before the external
         # API loop below: everything we need from `candidates` is already
