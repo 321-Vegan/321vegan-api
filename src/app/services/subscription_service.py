@@ -403,6 +403,7 @@ class SubscriptionService:
         self, db: Session,
         platform: Optional[SubscriptionPlatform] = None,
         limit: Optional[int] = None,
+        offset: Optional[int] = None,
     ) -> list[dict]:
         """
         Compare active/grace_period subscriptions against the platform's
@@ -411,9 +412,10 @@ class SubscriptionService:
 
         One external API call per subscription, so this is meant to be
         triggered on demand by an admin, not run on a hot path or scheduled
-        at high frequency. Pass `platform` and/or `limit` to keep a single
-        run short at real subscriber counts -- unfiltered, this can take
-        minutes and risk the request itself timing out.
+        at high frequency. Pass `platform` and/or `limit`/`offset` to page
+        through in batches at real subscriber counts -- unfiltered, a full
+        run can take minutes and risk the request itself timing out.
+        Ordered by id so limit/offset paging is stable across calls.
 
         Limitation: Apple's and Google's APIs only let us look up a
         purchase we already know the identifier for. A purchase that
@@ -423,9 +425,11 @@ class SubscriptionService:
         """
         query = db.query(Subscription).filter(
             Subscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.GRACE_PERIOD])
-        )
+        ).order_by(Subscription.id)
         if platform is not None:
             query = query.filter(Subscription.platform == platform)
+        if offset is not None:
+            query = query.offset(offset)
         if limit is not None:
             query = query.limit(limit)
         candidates = query.all()

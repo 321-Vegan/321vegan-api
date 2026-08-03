@@ -113,6 +113,7 @@ def get_subscription_diagnostics(
     _admin: User = Depends(get_current_superuser),
     platform: Optional[SubscriptionPlatform] = Query(None, description="Restrict to one platform (apple/google)."),
     limit: Optional[int] = Query(None, ge=1, description="Max subscriptions to check, to avoid a long-running request."),
+    offset: Optional[int] = Query(None, ge=0, description="Skip this many subscriptions first, to page through in batches."),
 ):
     """
     Admin-only: compare active/grace_period subscriptions against their
@@ -121,11 +122,11 @@ def get_subscription_diagnostics(
     Slow by nature (one external API call per subscription, plus an OCSP
     check for Apple) -- at real subscriber counts a full unfiltered run can
     take minutes and risk the request itself timing out. Use `platform`
-    and/or `limit` to run it in smaller batches instead of all at once.
-    See run_subscription_diagnostics() docstring for what it can and can't
-    catch.
+    and/or `limit`/`offset` to page through in smaller batches instead of
+    all at once. See run_subscription_diagnostics() docstring for what it
+    can and can't catch.
     """
-    issues = subscription_service.run_subscription_diagnostics(db, platform=platform, limit=limit)
+    issues = subscription_service.run_subscription_diagnostics(db, platform=platform, limit=limit, offset=offset)
     return {
         "checked_at": datetime.now(timezone.utc).isoformat(),
         "issue_count": len(issues),
