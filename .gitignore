@@ -78,6 +78,7 @@ cover/
 
 # Sphinx documentation
 docs/_build/
+.claude
 
 # PyBuilder
 .pybuilder/

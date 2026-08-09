@@ -31,7 +31,7 @@ def fetch_all_partner_categories(db: Session = Depends(get_db)) -> List[Optional
     Returns:
         List[PartnerCategoryOut]: The list of partner categories fetched from the database.
     """
-    return partner_category_crud.get_all(db)
+    return db.query(PartnerCategory).order_by(PartnerCategory.display_order).all()
 
 
 @router.get(

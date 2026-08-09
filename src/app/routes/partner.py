@@ -32,7 +32,7 @@ def fetch_all_partners(db: Session = Depends(get_db)) -> List[Optional[PartnerOu
     Returns:
         List[PartnerOut]: The list of partners fetched from the database.
     """
-    return partner_crud.get_all(db)
+    return db.query(Partner).order_by(Partner.display_order).all()
 
 
 @router.get(

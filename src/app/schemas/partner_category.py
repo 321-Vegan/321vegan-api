@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 class PartnerCategoryBase(BaseModel):
     name: Optional[str] = None
+    display_order: Optional[int] = None
 
 
 class PartnerCategoryCreate(PartnerCategoryBase):
@@ -27,6 +28,7 @@ class PartnerCategoryOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     name: str
+    display_order: int = 0
 
     class Config:
         from_attributes = True

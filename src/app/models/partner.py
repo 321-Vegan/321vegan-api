@@ -21,6 +21,7 @@ class Partner(Base):
     is_affiliate = Column(Boolean, default=False, nullable=False)
     show_code_in_website = Column(Boolean, default=False, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
+    display_order = Column(Integer, nullable=False, default=0, server_default="0")
     category_id = Column(Integer, ForeignKey(
         "partner_categories.id"), nullable=True)
 

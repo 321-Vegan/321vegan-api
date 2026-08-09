@@ -37,6 +37,35 @@ target_metadata = Base.metadata
 # my_important_option = config.get_main_option("my_important_option")
 # ... etc.
 
+# Local dev DBs can carry schema from unmerged feature branches (e.g. the
+# XP tables/columns from feature/implement-xp-system, which isn't on main
+# yet). Autogenerate compares the live DB against these models and would
+# otherwise propose dropping that leftover schema on every new migration.
+# Remove this filter once that feature actually merges into main.
+EXCLUDED_TABLES = {"xp_action_types", "xp_events"}
+EXCLUDED_COLUMNS = {
+    ("users", "xp"),
+    ("users", "login_streak_count"),
+    ("users", "last_login_streak_date"),
+}
+
+# ix_scan_events_ean_shop_id is created via a raw op.create_index() in that
+# same XP migration rather than being declared on the ScanEvent model, so
+# it's permanently invisible to Base.metadata -- this one is a standing
+# false positive independent of the XP branch situation above, and should
+# stay excluded unless it's later added as a proper Index() on the model.
+EXCLUDED_INDEXES = {"ix_scan_events_ean_shop_id"}
+
+
+def include_object(object, name, type_, reflected, compare_to):
+    if type_ == "table" and name in EXCLUDED_TABLES:
+        return False
+    if type_ == "column" and (object.table.name, name) in EXCLUDED_COLUMNS:
+        return False
+    if type_ == "index" and name in EXCLUDED_INDEXES:
+        return False
+    return True
+
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
@@ -56,6 +85,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        include_object=include_object,
     )
 
     with context.begin_transaction():
@@ -77,7 +107,8 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection, target_metadata=target_metadata,
+            include_object=include_object,
         )
 
         with context.begin_transaction():

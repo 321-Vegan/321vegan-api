@@ -17,6 +17,7 @@ class PartnerBase(BaseModel):
     is_affiliate: Optional[bool] = False
     show_code_in_website: Optional[bool] = False
     is_active: Optional[bool] = True
+    display_order: Optional[int] = None
     category_id: Optional[int] = None
 
 
@@ -58,6 +59,7 @@ class PartnerOut(BaseModel):
     is_affiliate: bool = False
     show_code_in_website: bool = False
     is_active: bool = True
+    display_order: int = 0
     category_id: Optional[int] = None
     category: Optional['PartnerCategoryOut'] = None
 

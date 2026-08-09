@@ -11,6 +11,7 @@ class PartnerCategory(Base):
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
     name = Column(String, nullable=False, unique=True, index=True)
+    display_order = Column(Integer, nullable=False, default=0, server_default="0")
 
     # Relationship with partners
     partners = relationship("Partner", back_populates="category")
