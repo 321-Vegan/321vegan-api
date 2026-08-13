@@ -46,3 +46,10 @@ class EmailChangeRequest(BaseModel):
     new_email: EmailStr
     current_password: str
 
+
+class PasswordChangeRequest(BaseModel):
+    """Schema for changing the current user's password while logged in"""
+
+    current_password: str
+    new_password: str
+

@@ -180,6 +180,27 @@ class UserCRUDRepository(CRUDRepository):
         
         return user
     
+    def change_password(self, db: Session, user: User, new_password: str) -> User:
+        """
+        Change a user's password (already-authenticated flow, distinct from
+        the token-based reset_password above).
+
+        Parameters:
+            db (Session): The database session object.
+            user (User): The user changing their password.
+            new_password (str): The new password.
+
+        Returns:
+            User: The updated user.
+        """
+        user.password = get_password_hash(new_password)
+
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+        return user
+
     def request_email_change(self, db: Session, user: User, new_email: str) -> Optional[str]:
         """
         Request an email change for a user.

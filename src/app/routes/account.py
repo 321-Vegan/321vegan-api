@@ -13,8 +13,8 @@ from app.models import User
 from app.schemas.b12_intake import B12IntakeOut
 from app.schemas.error_report import ErrorReportOutPaginated
 from app.schemas.user import UserOut, UserUpdateOwn
-from app.schemas.auth import EmailChangeRequest
-from app.security import get_password_hash, verify_password
+from app.schemas.auth import EmailChangeRequest, PasswordChangeRequest
+from app.security import get_password_hash, verify_password, validate_password_strength
 from app.services.email import email_service
 
 log = get_logger(__name__)
@@ -167,6 +167,50 @@ def fetch_my_b12_intakes(
         List[B12IntakeOut]: The current user's B12 intakes.
     """
     return b12_intake_crud.get_by_user(db, active_user.id)
+
+
+@router.patch("/password", status_code=status.HTTP_200_OK)
+def change_password(
+    request: PasswordChangeRequest,
+    db: Session = Depends(get_db),
+    active_user: User = Depends(get_current_active_user),
+):
+    """
+    Change the current user's password.
+
+    Parameters:
+        request (PasswordChangeRequest): The current and new password.
+        db (Session): The database session.
+        active_user (User): The current active user.
+
+    Returns:
+        Dict[str, str]: A confirmation message.
+
+    Raises:
+        HTTPException: If the current password is incorrect.
+        HTTPException: If the new password doesn't meet security requirements.
+    """
+    if not verify_password(request.current_password, active_user.password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect password.",
+        )
+
+    is_valid, error_messages = validate_password_strength(request.new_password)
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"errors": error_messages},
+        )
+
+    user_crud.change_password(db, active_user, request.new_password)
+
+    email_service.send_password_change_notification(
+        email=active_user.email,
+        user_nickname=active_user.nickname,
+    )
+
+    return {"detail": "Password has been updated successfully."}
 
 
 @router.patch("/email", status_code=status.HTTP_200_OK)

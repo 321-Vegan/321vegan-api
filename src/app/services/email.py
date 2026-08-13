@@ -330,6 +330,68 @@ class EmailService:
         
         return self.send_email([old_email], subject, html_content, text_content)
 
+    def send_password_change_notification(self, email: str, user_nickname: str) -> bool:
+        """
+        Send a notification that the account password has been changed.
+
+        Parameters:
+            email (str): The account's email address
+            user_nickname (str): User's nickname
+
+        Returns:
+            bool: True if email was sent successfully, False otherwise
+        """
+        subject = "Votre mot de passe a été modifié - 321 Vegan"
+
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Mot de passe modifié</title>
+        </head>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 10px;">
+                <h1 style="color: #2c5530; text-align: center; margin-bottom: 30px;">
+                    🌱 321Vegan
+                </h1>
+
+                <h2 style="color: #333; margin-bottom: 20px;">
+                    Bonjour {user_nickname},
+                </h2>
+
+                <p style="margin-bottom: 20px;">
+                    Nous vous informons que le mot de passe associé à votre compte 321Vegan a été modifié avec succès.
+                </p>
+
+                <p style="margin-bottom: 20px;">
+                    Si vous n'êtes pas à l'origine de ce changement, veuillez nous contacter immédiatement.
+                </p>
+
+                <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
+
+                <p style="font-size: 12px; color: #999; text-align: center;">
+                    Cet e-mail a été envoyé par 321 Vegan. Si vous avez des questions, n'hésitez pas à nous contacter !
+                </p>
+            </div>
+        </body>
+        </html>
+        """
+
+        text_content = f"""
+        Bonjour {user_nickname},
+
+        Nous vous informons que le mot de passe associé à votre compte 321Vegan a été modifié avec succès.
+
+        Si vous n'êtes pas à l'origine de ce changement, veuillez nous contacter immédiatement.
+
+        A bientôt !
+        L'équipe de 321Vegan
+        """
+
+        return self.send_email([email], subject, html_content, text_content)
+
 
 # Create a singleton instance
 email_service = EmailService()
