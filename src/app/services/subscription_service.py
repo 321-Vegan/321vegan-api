@@ -8,6 +8,7 @@ from appstoreserverlibrary.models.Status import Status as AppleStatus
 from appstoreserverlibrary.signed_data_verifier import SignedDataVerifier
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -45,6 +46,18 @@ GOOGLE_STATE_MAP = {
 
 # A drift in expires_at smaller than this is not worth flagging (clock/rounding noise).
 DIAGNOSTICS_EXPIRY_DRIFT_TOLERANCE_SECONDS = 60
+
+# Google API responses that mean "this token/product isn't a valid purchase" --
+# permanent, retrying won't help.
+GOOGLE_INVALID_TOKEN_STATUSES = {400, 404}
+
+
+class GoogleVerificationTransientError(Exception):
+    """
+    Google Play verification failed for a reason that may resolve on retry
+    (auth/permission errors, network issues, Google-side 5xx) -- as opposed
+    to the purchase token itself being invalid.
+    """
 
 
 class SubscriptionService:
@@ -222,7 +235,12 @@ class SubscriptionService:
         Verify a subscription purchase with Google Play Developer API.
         Uses google-api-python-client with a service account.
 
-        Returns subscription info dict or None if invalid.
+        Returns subscription info dict, or None if Google says the token/
+        product itself is invalid. Raises GoogleVerificationTransientError
+        for auth/permission/network/5xx failures, since those may resolve
+        on retry (e.g. during a Play Console developer account transfer)
+        and callers on a retryable path (the RTDN webhook) should not treat
+        them the same as a genuinely invalid purchase.
         """
         try:
             credentials = service_account.Credentials.from_service_account_file(
@@ -254,9 +272,16 @@ class SubscriptionService:
                 "raw": result,
             }
 
+        except HttpError as e:
+            status_code = e.resp.status if e.resp else None
+            if status_code in GOOGLE_INVALID_TOKEN_STATUSES:
+                log.error(f"Google purchase verification failed (invalid token): {str(e)}")
+                return None
+            log.error(f"Google purchase verification failed (transient, status={status_code}): {str(e)}")
+            raise GoogleVerificationTransientError(str(e)) from e
         except Exception as e:
-            log.error(f"Google purchase verification failed: {str(e)}")
-            return None
+            log.error(f"Google purchase verification failed (transient): {str(e)}")
+            raise GoogleVerificationTransientError(str(e)) from e
 
     def process_google_webhook(self, message_data: dict, db: Session) -> bool:
         """
@@ -341,7 +366,10 @@ class SubscriptionService:
             if not purchase_token:
                 log.error("Google verification requires purchase_token")
                 return None
-            verified = self.verify_google_purchase(purchase_token, product_id)
+            try:
+                verified = self.verify_google_purchase(purchase_token, product_id)
+            except GoogleVerificationTransientError:
+                return None
         else:
             log.error(f"Unknown platform: {platform}")
             return None
@@ -540,7 +568,10 @@ class SubscriptionService:
         return None
 
     def _get_google_live_status(self, purchase_token: str, product_id: str) -> Optional[dict]:
-        verified = self.verify_google_purchase(purchase_token, product_id)
+        try:
+            verified = self.verify_google_purchase(purchase_token, product_id)
+        except GoogleVerificationTransientError:
+            return None
         if not verified:
             return None
         raw_state = verified.get("subscription_state")
