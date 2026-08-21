@@ -230,6 +230,38 @@ class SubscriptionService:
     # Google Play Developer API
     # ──────────────────────────────────────────────
 
+    @staticmethod
+    def _build_android_publisher_service():
+        credentials = service_account.Credentials.from_service_account_file(
+            settings.GOOGLE_SERVICE_ACCOUNT_PATH,
+            scopes=["https://www.googleapis.com/auth/androidpublisher"],
+        )
+        return build("androidpublisher", "v3", credentials=credentials)
+
+    def acknowledge_google_purchase(self, purchase_token: str, product_id: str) -> bool:
+        """
+        Acknowledge a Google Play subscription purchase. Google auto-refunds
+        and revokes any subscription left unacknowledged for 3 days, so this
+        must run once per initial purchase (renewals don't need it again).
+
+        Best-effort: acknowledging an already-acknowledged purchase errors
+        on Google's side, so failures here are logged, not raised -- this
+        must never block the surrounding verification flow, which is the
+        part that actually matters if this call fails.
+        """
+        try:
+            service = self._build_android_publisher_service()
+            service.purchases().subscriptions().acknowledge(
+                packageName=settings.GOOGLE_PLAY_PACKAGE_NAME,
+                subscriptionId=product_id,
+                token=purchase_token,
+                body={},
+            ).execute()
+            return True
+        except Exception as e:
+            log.warning(f"Google purchase acknowledgement failed (may already be acknowledged): {str(e)}")
+            return False
+
     def verify_google_purchase(self, purchase_token: str, product_id: str) -> Optional[dict]:
         """
         Verify a subscription purchase with Google Play Developer API.
@@ -243,12 +275,7 @@ class SubscriptionService:
         them the same as a genuinely invalid purchase.
         """
         try:
-            credentials = service_account.Credentials.from_service_account_file(
-                settings.GOOGLE_SERVICE_ACCOUNT_PATH,
-                scopes=["https://www.googleapis.com/auth/androidpublisher"],
-            )
-
-            service = build("androidpublisher", "v3", credentials=credentials)
+            service = self._build_android_publisher_service()
 
             result = service.purchases().subscriptionsv2().get(
                 packageName=settings.GOOGLE_PLAY_PACKAGE_NAME,
@@ -407,6 +434,11 @@ class SubscriptionService:
             db.commit()
             db.refresh(subscription)
             event_type = SubscriptionEventType.INITIAL_PURCHASE
+
+        if platform == SubscriptionPlatform.GOOGLE:
+            self.acknowledge_google_purchase(
+                verified.get("purchase_token"), verified.get("product_id", product_id)
+            )
 
         # Log event
         subscription_crud.create_event(
