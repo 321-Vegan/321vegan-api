@@ -1,5 +1,5 @@
 from typing import Optional, List
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from datetime import datetime, timezone
 
 
@@ -8,6 +8,12 @@ class SubscriptionVerifyRequest(BaseModel):
     transaction_id: Optional[str] = None
     purchase_token: Optional[str] = None
     product_id: str
+
+
+class AdminSubscriptionVerifyRequest(SubscriptionVerifyRequest):
+    """Same as SubscriptionVerifyRequest, but for an admin verifying on behalf of a user
+    who can't (e.g. their client never sent the initial purchase receipt)."""
+    user_email: EmailStr
 
 
 class SubscriptionOut(BaseModel):

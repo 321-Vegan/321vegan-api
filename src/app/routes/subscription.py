@@ -12,12 +12,14 @@ from app.routes.dependencies import (
     get_pagination_params,
 )
 from app.crud.subscription import subscription_crud
+from app.crud.user import user_crud
 from app.database.db import get_db
 from app.log import get_logger
 from app.models import User
 from app.models.subscription import SubscriptionPlatform
 from app.schemas.subscription import (
     SubscriptionVerifyRequest,
+    AdminSubscriptionVerifyRequest,
     SubscriptionOut,
     SubscriptionEventOut,
     SubscriptionEventOutPaginated,
@@ -39,6 +41,41 @@ def verify_subscription(
     Verify an in-app purchase receipt and create/update the user's subscription.
     Called by the Flutter app after a successful purchase.
     """
+    subscription = subscription_service.process_verification(
+        db=db,
+        user_id=user.id,
+        platform=request.platform,
+        transaction_id=request.transaction_id,
+        purchase_token=request.purchase_token,
+        product_id=request.product_id,
+    )
+    if not subscription:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Subscription verification failed",
+        )
+    return subscription
+
+
+@router.post("/admin/verify", response_model=SubscriptionOut, status_code=status.HTTP_200_OK)
+def admin_verify_subscription(
+    request: AdminSubscriptionVerifyRequest,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(get_current_superuser),
+):
+    """
+    Admin-only: verify a purchase receipt on behalf of a user, for cases where
+    their client never sent it (e.g. a purchase made while logged out that
+    never got retried). Looks up the user by email, then runs the exact same
+    verification flow as POST /verify.
+    """
+    user = user_crud.get_user_by_email(db, request.user_email)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
     subscription = subscription_service.process_verification(
         db=db,
         user_id=user.id,
