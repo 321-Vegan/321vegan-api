@@ -191,7 +191,7 @@ def get_current_client(
     Raises:
         HTTPException: If the api client is not found in the database.
     """
-    client = apiclient_crud.get_one(db, ApiClient.api_key == api_key.api_key)
+    client = apiclient_crud.get_by_api_key_cached(db, api_key.api_key)
     if client is None:
         raise _get_credential_exception(
             status_code=status.HTTP_404_NOT_FOUND, details="Client not found"
@@ -295,7 +295,7 @@ def get_current_user_or_client(db: Session = Depends(get_db), token: TokenPayloa
             )
         return user
     if api_key:
-        client = apiclient_crud.get_one(db, ApiClient.api_key == api_key)
+        client = apiclient_crud.get_by_api_key_cached(db, api_key.api_key)
         if client is None:
             raise _get_credential_exception(
                 status_code=status.HTTP_404_NOT_FOUND, details="Client not found"
@@ -334,8 +334,8 @@ def get_current_active_user_or_client(db: Session = Depends(get_db), token: Toke
             )
         return current_user
     if api_key:
-        current_client = apiclient_crud.get_one(
-            db, ApiClient.api_key == api_key.api_key)
+        current_client = apiclient_crud.get_by_api_key_cached(
+            db, api_key.api_key)
         if current_client is None:
             raise _get_credential_exception(
                 status_code=status.HTTP_404_NOT_FOUND, details="Client not found"
@@ -385,8 +385,8 @@ def get_admin_or_client(db: Session = Depends(get_db), token: TokenPayload | Non
             )
         return current_user
     if api_key:
-        current_client = apiclient_crud.get_one(
-            db, ApiClient.api_key == api_key.api_key)
+        current_client = apiclient_crud.get_by_api_key_cached(
+            db, api_key.api_key)
         if current_client is None:
             raise _get_credential_exception(
                 status_code=status.HTTP_404_NOT_FOUND, details="Client not found"
