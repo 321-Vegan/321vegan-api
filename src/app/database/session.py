@@ -22,7 +22,13 @@ def build_sqlalchemy_database_url_from_env(_settings: Settings) -> str:
     )
 
 
-def get_engine(database_url: str, echo=False) -> Engine:
+def get_engine(
+    database_url: str,
+    echo=False,
+    pool_size: int = settings.DB_POOL_SIZE,
+    max_overflow: int = settings.DB_MAX_OVERFLOW,
+    pool_timeout: int = settings.DB_POOL_TIMEOUT,
+) -> Engine:
     """
     Creates and returns a SQLAlchemy Engine object for connecting to a database.
 
@@ -31,6 +37,9 @@ def get_engine(database_url: str, echo=False) -> Engine:
         Defaults to SQLALCHEMY_DATABASE_URL.
         echo (bool): Whether or not to enable echoing of SQL statements.
         Defaults to False.
+        pool_size (int): Number of connections kept open in the pool.
+        max_overflow (int): Extra connections allowed beyond pool_size under load.
+        pool_timeout (int): Seconds to wait for a connection before raising a timeout.
 
     Returns:
         Engine: A SQLAlchemy Engine object representing the database connection.
@@ -40,6 +49,9 @@ def get_engine(database_url: str, echo=False) -> Engine:
         echo=echo,
         pool_pre_ping=True,  # Verify connections before using them
         pool_recycle=3600,  # Recycle connections after 1 hour to avoid stale connections
+        pool_size=pool_size,
+        max_overflow=max_overflow,
+        pool_timeout=pool_timeout,
     )
     return engine
 
