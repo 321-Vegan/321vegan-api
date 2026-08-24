@@ -10,11 +10,15 @@ from app.database.db import get_db
 from app.log import get_logger
 from app.models.partner import Partner
 from app.schemas.partner import PartnerCreate, PartnerOut, PartnerUpdate, PartnerOutPaginated, PartnerFilters
+from app.services.cache_service import TTLCache
 from app.services.file_service import file_service
 
 log = get_logger(__name__)
 
 router = APIRouter(dependencies=[Depends(get_admin_or_client)])
+
+# Partners change rarely; cache read-heavy list/search results to absorb traffic spikes.
+_partners_cache = TTLCache(ttl_seconds=3600)
 
 
 @router.get(
@@ -32,7 +36,11 @@ def fetch_all_partners(db: Session = Depends(get_db)) -> List[Optional[PartnerOu
     Returns:
         List[PartnerOut]: The list of partners fetched from the database.
     """
-    return db.query(Partner).order_by(Partner.display_order).all()
+    def compute():
+        partners = db.query(Partner).order_by(Partner.display_order).all()
+        return [PartnerOut.model_validate(p) for p in partners]
+
+    return _partners_cache.get_or_set("all", compute)
 
 
 @router.get(
@@ -61,22 +69,28 @@ def fetch_paginated_partners(
     """
     page, size = pagination_params
     sortby, descending = orderby_params
-    partners, total = partner_crud.get_many(
-        db,
-        skip=page,
-        limit=size,
-        order_by=sortby,
-        descending=descending,
-        **filter_params.model_dump(exclude_none=True)
-    )
-    pages = (total + size - 1) // size
-    return {
-        "items": partners,
-        "total": total,
-        "page": page,
-        "size": size,
-        "pages": pages
-    }
+    filters = filter_params.model_dump(exclude_none=True)
+    cache_key = (page, size, sortby, descending, tuple(sorted(filters.items())))
+
+    def compute():
+        partners, total = partner_crud.get_many(
+            db,
+            skip=page,
+            limit=size,
+            order_by=sortby,
+            descending=descending,
+            **filters
+        )
+        pages = (total + size - 1) // size
+        return PartnerOutPaginated(
+            items=[PartnerOut.model_validate(p) for p in partners],
+            total=total,
+            page=page,
+            size=size,
+            pages=pages
+        )
+
+    return _partners_cache.get_or_set(cache_key, compute)
 
 
 @router.get(
@@ -171,6 +185,7 @@ def create_partner(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Couldn't create partner. Error: {str(e)}",
         ) from e
+    _partners_cache.clear()
     return partner
 
 
@@ -229,6 +244,7 @@ def update_partner(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Couldn't update partner with id {id}. Error: {str(e)}",
         ) from e
+    _partners_cache.clear()
     return partner
 
 
@@ -271,6 +287,7 @@ def delete_partner(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Couldn't delete partner with id {id}. Error: {str(e)}",
         ) from e
+    _partners_cache.clear()
 
 
 @router.post("/{partner_id}/upload-logo", response_model=PartnerOut, status_code=status.HTTP_200_OK, dependencies=[Depends(RoleChecker(["admin"]))])
@@ -307,6 +324,7 @@ def upload_partner_logo(
         partner_update = PartnerUpdate(logo_path=logo_path)
         updated_partner = partner_crud.update(db, partner, partner_update)
 
+        _partners_cache.clear()
         return updated_partner
 
     except HTTPException:
@@ -346,6 +364,7 @@ def delete_partner_logo(
         # Update the partner to remove the logo path
         partner_update = PartnerUpdate(logo_path=None)
         partner_crud.update(db, partner, partner_update)
+        _partners_cache.clear()
 
     except Exception as e:
         raise HTTPException(

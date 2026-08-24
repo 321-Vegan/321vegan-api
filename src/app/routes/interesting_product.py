@@ -12,11 +12,15 @@ from app.models import InterestingProduct, User, Product
 from app.models.interesting_product import InterestingProductType
 from app.schemas.interesting_product import InterestingProductCreate, InterestingProductOut, InterestingProductUpdate, InterestingProductOutPaginated, InterestingProductFilters, InterestingProductUploadImage, InterestingProductInsert
 from app.schemas.product import ProductUpdate
+from app.services.cache_service import TTLCache
 from app.services.file_service import file_service
 
 log = get_logger(__name__)
 
 router = APIRouter()
+
+# Interesting products change rarely; cache read-heavy list/search results to absorb traffic spikes.
+_interesting_products_cache = TTLCache(ttl_seconds=3600)
 
 
 @router.get(
@@ -37,7 +41,11 @@ def fetch_all_interesting_products(
     Returns:
         List[Optional[InterestingProductOut]]: The list of interesting products fetched from the database.
     """
-    return interesting_product_crud.get_all(db)
+    def compute():
+        products = interesting_product_crud.get_all(db)
+        return [InterestingProductOut.model_validate(p) for p in products]
+
+    return _interesting_products_cache.get_or_set("all", compute)
 
 
 @router.get(
@@ -64,22 +72,28 @@ def fetch_paginated_interesting_products(
     """
     page, size = pagination_params
     sortby, descending = orderby_params
-    products, total = interesting_product_crud.get_many(
-        db,
-        skip=page,
-        limit=size,
-        order_by=sortby,
-        descending=descending,
-        **filter_params.model_dump(exclude_none=True)
-    )
-    pages = (total + size - 1) // size
-    return {
-        "items": products,
-        "total": total,
-        "page": page,
-        "size": size,
-        "pages": pages
-    }
+    filters = filter_params.model_dump(exclude_none=True)
+    cache_key = (page, size, sortby, descending, tuple(sorted(filters.items())))
+
+    def compute():
+        products, total = interesting_product_crud.get_many(
+            db,
+            skip=page,
+            limit=size,
+            order_by=sortby,
+            descending=descending,
+            **filters
+        )
+        pages = (total + size - 1) // size
+        return InterestingProductOutPaginated(
+            items=[InterestingProductOut.model_validate(p) for p in products],
+            total=total,
+            page=page,
+            size=size,
+            pages=pages
+        )
+
+    return _interesting_products_cache.get_or_set(cache_key, compute)
 
 
 @router.get(
@@ -224,6 +238,7 @@ def create_interesting_product(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Couldn't create interesting product. Error: {str(e)}",
         ) from e
+    _interesting_products_cache.clear()
     return interesting_product
 
 
@@ -309,6 +324,7 @@ def update_interesting_product(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Couldn't update interesting product with id {id}. Error: {str(e)}",
         ) from e
+    _interesting_products_cache.clear()
     return interesting_product
 
 
@@ -347,6 +363,7 @@ def delete_interesting_product(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Couldn't delete interesting product with id {id}. Error: {str(e)}",
         ) from e
+    _interesting_products_cache.clear()
 
 
 @router.post("/{product_id}/upload-image", response_model=InterestingProductOut, status_code=status.HTTP_200_OK, dependencies=[Depends(RoleChecker(["contributor", "admin"]))])
@@ -385,6 +402,7 @@ def upload_interesting_product_image(
         updated_product = interesting_product_crud.update(
             db, product, product_update)
 
+        _interesting_products_cache.clear()
         return updated_product
 
     except HTTPException:
@@ -424,6 +442,7 @@ def delete_interesting_product_image(
         # Update the product to remove the image path
         product_update = InterestingProductUploadImage(image=None)
         interesting_product_crud.update(db, product, product_update)
+        _interesting_products_cache.clear()
 
     except Exception as e:
         raise HTTPException(
