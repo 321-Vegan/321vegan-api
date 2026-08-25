@@ -391,7 +391,10 @@ class SubscriptionService:
             verified = self.verify_apple_transaction(transaction_id)
         elif platform == SubscriptionPlatform.GOOGLE:
             if not purchase_token:
-                log.error("Google verification requires purchase_token")
+                # Client-input issue (e.g. a stuck pending-receipt retry with
+                # an empty token), not a server fault -- warning keeps this
+                # out of Sentry's error tracker instead of paging on noise.
+                log.warning("Google verification requires purchase_token")
                 return None
             try:
                 verified = self.verify_google_purchase(purchase_token, product_id)
