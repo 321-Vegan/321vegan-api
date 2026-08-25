@@ -43,7 +43,7 @@ def fetch_all_interesting_products(
     """
     def compute():
         products = interesting_product_crud.get_all(db)
-        return [InterestingProductOut.model_validate(p) for p in products]
+        return [InterestingProductOut.model_validate(p, from_attributes=True) for p in products]
 
     return _interesting_products_cache.get_or_set("all", compute)
 
@@ -86,7 +86,7 @@ def fetch_paginated_interesting_products(
         )
         pages = (total + size - 1) // size
         return InterestingProductOutPaginated(
-            items=[InterestingProductOut.model_validate(p) for p in products],
+            items=[InterestingProductOut.model_validate(p, from_attributes=True) for p in products],
             total=total,
             page=page,
             size=size,

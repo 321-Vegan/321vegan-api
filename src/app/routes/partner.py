@@ -38,7 +38,7 @@ def fetch_all_partners(db: Session = Depends(get_db)) -> List[Optional[PartnerOu
     """
     def compute():
         partners = db.query(Partner).order_by(Partner.display_order).all()
-        return [PartnerOut.model_validate(p) for p in partners]
+        return [PartnerOut.model_validate(p, from_attributes=True) for p in partners]
 
     return _partners_cache.get_or_set("all", compute)
 
@@ -83,7 +83,7 @@ def fetch_paginated_partners(
         )
         pages = (total + size - 1) // size
         return PartnerOutPaginated(
-            items=[PartnerOut.model_validate(p) for p in partners],
+            items=[PartnerOut.model_validate(p, from_attributes=True) for p in partners],
             total=total,
             page=page,
             size=size,
