@@ -39,9 +39,16 @@ class ApiClientCRUDRepository(CRUDRepository):
         Returns:
             Optional[ApiClient]: The matching api client, if found.
         """
-        return _api_client_cache.get_or_set(
-            api_key, lambda: self.get_one(db, ApiClient.api_key == api_key)
-        )
+        def fetch() -> Optional[ApiClient]:
+            client = self.get_one(db, ApiClient.api_key == api_key)
+            if client is not None:
+                # Detach immediately so a later commit on this session (e.g. from
+                # some other write request reusing the same api_key) can't expire
+                # this object's attributes while it sits in the cache.
+                db.expunge(client)
+            return client
+
+        return _api_client_cache.get_or_set(api_key, fetch)
 
 
 apiclient_crud = ApiClientCRUDRepository(model=ApiClient)
