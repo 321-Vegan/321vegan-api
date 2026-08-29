@@ -204,7 +204,9 @@ async def export_products_to_sqlite(
         # Clear existing data
         sqlite_cursor.execute("DELETE FROM products")
 
-        # Query published products with their brands
+        # Query published products with their brands.
+        # Only these states are exported - TO_INVESTIGATE (and other
+        # in-progress states) are intentionally excluded.
         published_products = db.query(Product).filter(
             Product.state.in_([
                 ProductState.PUBLISHED,
@@ -283,7 +285,8 @@ async def get_export_statistics(
     """
 
     try:
-        # Query published products
+        # Query published products - matches the export filter above.
+        # TO_INVESTIGATE products are intentionally not exported.
         published_products = db.query(Product).filter(
             Product.state.in_([
                 ProductState.PUBLISHED,
