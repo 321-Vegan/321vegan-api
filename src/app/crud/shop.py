@@ -1,5 +1,5 @@
 from typing import Optional, List, Tuple
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import func, distinct
 from app.crud.base import CRUDRepository
@@ -11,6 +11,54 @@ import math
 
 
 class ShopCRUDRepository(CRUDRepository):
+    def get_by_id(self, db: Session, id: int) -> Optional[Shop]:
+        """
+        Retrieves a (non soft-deleted) shop by its ID.
+
+        Parameters:
+            db (Session): The database session.
+            id (int): The shop ID.
+
+        Returns:
+            Optional[Shop]: The retrieved shop, if found and not deleted.
+        """
+        return db.query(self._model).filter(
+            self._model.id == id,
+            self._model.date_deleted.is_(None)
+        ).first()
+
+    def get_all(self, db: Session) -> List[Shop]:
+        """
+        Retrieves all non soft-deleted shops.
+
+        Parameters:
+            db (Session): The database session.
+
+        Returns:
+            List[Shop]: List of retrieved shops.
+        """
+        return db.query(self._model).filter(
+            self._model.date_deleted.is_(None)
+        ).all()
+
+    def soft_delete(self, db: Session, shop: Shop) -> Shop:
+        """
+        Soft-deletes a shop by setting its date_deleted timestamp instead of
+        removing the row, so its scan/review history is preserved.
+
+        Parameters:
+            db (Session): The database session.
+            shop (Shop): The shop to soft-delete.
+
+        Returns:
+            Shop: The soft-deleted shop.
+        """
+        shop.date_deleted = datetime.now(timezone.utc)
+        db.add(shop)
+        db.commit()
+        db.refresh(shop)
+        return shop
+
     def get_many(
         self, 
         db: Session, 
@@ -36,8 +84,12 @@ class ShopCRUDRepository(CRUDRepository):
         Returns:
             Tuple[List[Shop], int]: List of shops and total count.
         """
+        filters = filters or {}
+        if 'date_deleted__isnull' not in filters:
+            filters['date_deleted__isnull'] = True
+
         eans = None
-        if filters and 'ean__in' in filters:
+        if 'ean__in' in filters:
             eans = filters.pop('ean__in')
 
         if eans:
@@ -88,9 +140,10 @@ class ShopCRUDRepository(CRUDRepository):
         # Find shops in the bounding box first (faster)
         shops = db.query(self._model).filter(
             self._model.latitude.between(latitude - lat_range, latitude + lat_range),
-            self._model.longitude.between(longitude - lon_range, longitude + lon_range)
+            self._model.longitude.between(longitude - lon_range, longitude + lon_range),
+            self._model.date_deleted.is_(None)
         ).all()
-        
+
         # Calculate exact distance
         for shop in shops:
             a = (math.sin(math.radians(shop.latitude - latitude) / 2) ** 2 +
@@ -130,7 +183,8 @@ class ShopCRUDRepository(CRUDRepository):
 
         shops = db.query(self._model).filter(
             self._model.latitude.between(latitude - lat_range, latitude + lat_range),
-            self._model.longitude.between(longitude - lon_range, longitude + lon_range)
+            self._model.longitude.between(longitude - lon_range, longitude + lon_range),
+            self._model.date_deleted.is_(None)
         ).all()
 
         shops_with_distance = []
@@ -158,7 +212,10 @@ class ShopCRUDRepository(CRUDRepository):
         Returns:
             Optional[Shop]: The shop with the given OSM ID, or None.
         """
-        return db.query(self._model).filter(self._model.osm_id == osm_id).first()
+        return db.query(self._model).filter(
+            self._model.osm_id == osm_id,
+            self._model.date_deleted.is_(None)
+        ).first()
     
     def get_in_bounding_box(
         self,
@@ -185,7 +242,9 @@ class ShopCRUDRepository(CRUDRepository):
         """
         return db.query(self._model).filter(
             self._model.latitude.between(min_lat, max_lat),
-            self._model.longitude.between(min_lng, max_lng)
+            self._model.longitude.between(min_lng, max_lng),
+            self._model.validated.is_(True),
+            self._model.date_deleted.is_(None)
         ).limit(limit).all()
 
     def get_shop_scan_summary(self, db: Session, shop_id: int) -> List[dict]:

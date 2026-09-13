@@ -29,11 +29,13 @@ class ShopUpdate(BaseModel):
     osm_id: Optional[str] = None
     osm_type: Optional[str] = None
     shop_type: Optional[str] = None
+    validated: Optional[bool] = None
 
 
 class ShopInDB(ShopBase):
     id: int
     created_by: Optional[int] = None
+    validated: bool
     created_at: datetime
     updated_at: datetime
 
@@ -78,3 +80,4 @@ class ShopFilters(BaseModel):
     city: Optional[str] = None
     country: Optional[str] = None
     shop_type: Optional[str] = None
+    validated: Optional[bool] = None

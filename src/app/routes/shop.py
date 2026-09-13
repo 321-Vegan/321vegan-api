@@ -63,6 +63,8 @@ def fetch_paginated_shops(
     page, size = pagination_params
     sortby, descending = orderby_params
     filters = filter_params.model_dump(exclude_none=True)
+    if 'validated' not in filters:
+        filters['validated'] = True
     if ean__in:
         eans = []
         for e in ean__in:
@@ -182,7 +184,8 @@ def create_shop(
 ) -> ShopOut:
     """
     Create a new shop. Any authenticated user can submit a shop.
-    The created_by field is automatically set to the current user's ID.
+    The created_by field is automatically set to the current user's ID,
+    and the shop is left unvalidated until an admin reviews it.
 
     Parameters:
         shop_in (ShopCreate): The shop data.
@@ -195,6 +198,7 @@ def create_shop(
     try:
         shop = shop_crud.create(db, shop_in)
         shop.created_by = current_user.id
+        shop.validated = False
         db.commit()
         db.refresh(shop)
         log.info(f"Shop created: {shop.name} (ID: {shop.id}) by user {current_user.id}")
@@ -260,7 +264,8 @@ def delete_shop(
     current_user: User = Depends(RoleChecker(["admin"]))
 ) -> None:
     """
-    Delete a shop.
+    Soft-delete a shop: sets date_deleted instead of removing the row, so its
+    scan/review history is preserved.
 
     Parameters:
         id (int): The ID of the shop.
@@ -273,5 +278,5 @@ def delete_shop(
             status_code=status.HTTP_404_NOT_FOUND, detail="Shop not found"
         )
 
-    shop_crud.delete(db, shop)
-    log.info(f"Shop deleted: ID {id}")
+    shop_crud.soft_delete(db, shop)
+    log.info(f"Shop soft-deleted: ID {id}")

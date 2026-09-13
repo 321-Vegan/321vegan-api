@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, desc
+from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, desc
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.hybrid import hybrid_property
@@ -30,10 +30,15 @@ class Shop(Base):
     created_by = Column(Integer, ForeignKey(
         "users.id", ondelete="SET NULL"), nullable=True, index=True)
     user = relationship("User", back_populates="shops")
+    # False for shops manually created by a user, pending admin validation.
+    # Shops created automatically (e.g. via Overpass API) are validated by default.
+    validated = Column(Boolean, default=True,
+                       server_default='true', nullable=False, index=True)
     created_at = Column(DateTime(timezone=True),
                         server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(
     ), onupdate=func.now(), nullable=False)
+    date_deleted = Column(DateTime(timezone=True), nullable=True, index=True)
     reviews = relationship("ShopReview",
                            back_populates="shop",
                            cascade="all, delete",
