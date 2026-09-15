@@ -141,7 +141,7 @@ def fetch_product_by_id(
     return product
 
 
-@router.get("/ean/{ean}", response_model=ProductOut, status_code=status.HTTP_200_OK, dependencies=[Depends(get_current_active_user)])
+@router.get("/ean/{ean}", response_model=ProductOut, status_code=status.HTTP_200_OK, dependencies=[Depends(get_current_active_user_or_client)])
 def fetch_product_by_ean(ean: str, db: Session = Depends(get_db)):
     """
     Fetches a product from the database based on the provided ean.

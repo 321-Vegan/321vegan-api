@@ -26,9 +26,12 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str
 
-    # SQLAlchemy connection pool (see src/app/database/session.py)
-    DB_POOL_SIZE: int = 20
-    DB_MAX_OVERFLOW: int = 30
+    # SQLAlchemy connection pool (see src/app/database/session.py). Each of
+    # the 3 uvicorn workers (Dockerfile) gets its own pool, so these are
+    # sized to keep the combined ceiling (workers * (pool_size +
+    # max_overflow)) comfortably under Postgres' default max_connections=100.
+    DB_POOL_SIZE: int = 10
+    DB_MAX_OVERFLOW: int = 15
     DB_POOL_TIMEOUT: int = 30
 
     PGADMIN_DEFAULT_EMAIL: str
