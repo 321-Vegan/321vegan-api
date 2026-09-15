@@ -21,10 +21,6 @@ class ProductCRUDRepository(CRUDRepository):
         Returns:
             Optional[Product]: The product found by ean, or None if not found.
         """
-        log.debug(
-            "retrieving one record for %s",
-            self._model.__name__,
-        )
         return self.get_one(db, self._model.ean == ean)
 
     def create(
