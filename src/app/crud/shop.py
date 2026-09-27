@@ -243,7 +243,6 @@ class ShopCRUDRepository(CRUDRepository):
         return db.query(self._model).filter(
             self._model.latitude.between(min_lat, max_lat),
             self._model.longitude.between(min_lng, max_lng),
-            self._model.validated.is_(True),
             self._model.date_deleted.is_(None)
         ).limit(limit).all()
 

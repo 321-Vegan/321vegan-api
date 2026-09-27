@@ -63,8 +63,6 @@ def fetch_paginated_shops(
     page, size = pagination_params
     sortby, descending = orderby_params
     filters = filter_params.model_dump(exclude_none=True)
-    if 'validated' not in filters:
-        filters['validated'] = True
     if ean__in:
         eans = []
         for e in ean__in:
