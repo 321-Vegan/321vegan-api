@@ -43,6 +43,7 @@ class Product(Base):
     description = Column(Text)
     problem_description = Column(Text)
     image = Column(String, nullable=True)
+    brand_answer = Column(String, nullable=True)
     brand_id = Column(Integer, ForeignKey("brands.id"))
     brand = relationship("Brand", back_populates="products")
     status = Column(Enum(ProductStatus), default=ProductStatus.MAYBE_VEGAN)

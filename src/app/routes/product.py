@@ -11,7 +11,7 @@ from app.database.db import get_db
 from app.log import get_logger
 from app.models import Product, User
 from app.models.product import ProductState
-from app.schemas.product import ProductCreate, ProductOut, ProductUpdate, ProductOutPaginated, ProductOutCount, ProductFilters, ProductFile
+from app.schemas.product import ProductCreate, ProductOut, ProductUpdate, ProductOutPaginated, ProductOutCount, ProductFilters, ProductFile, ProductBrandAnswerFile
 from app.services.s3_file_manager import s3_file_manager
 
 log = get_logger(__name__)
@@ -352,10 +352,13 @@ def delete_product(
 
     try:
         image_path = product.image
+        brand_answer_path = product.brand_answer
         product_crud.delete(db, product)
         # Delete the physical file if it exists
         if image_path:
             s3_file_manager.delete_file(image_path)
+        if brand_answer_path:
+            s3_file_manager.delete_file(brand_answer_path)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -440,6 +443,90 @@ def delete_product_image(
 
         # Update the product to remove the logo path
         product_update = ProductFile(image=None)
+        product_crud.update(db, product, product_update, active_user, increment_modified=False)
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting image: {str(e)}"
+        ) from e
+
+
+@router.post("/{id}/brand-answer", response_model=ProductOut, status_code=status.HTTP_200_OK)
+def upload_product_brand_answer(
+    *,
+    db: Session = Depends(get_db),
+    id: int,
+    file: UploadFile = File(...,
+                            description="Image (JPG, PNG, WebP max 5MB)"),
+    active_user: User = Depends(get_current_active_user),
+):
+    """
+    Upload a brand answer photo for a product.
+
+    id (int): The ID of the product to be updated.
+    file (UploadFile): Image file (JPG, PNG, WebP, max 5MB)
+    """
+    # Check if the product exists
+    product = product_crud.get_one(db, Product.id == id)
+    if product is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Product with id {id} not found. Cannot upload file.",
+        )
+
+    try:
+        old_brand_answer = product.brand_answer
+        # Save the file and get the path
+        file_extension = Path(file.filename or "").suffix.lower()
+        filename = f"product_{product.id}_{product.ean}_brand_answer_{time.strftime('%Y%m%d_%H%M%S')}{file_extension}"
+        s3_file_manager.upload_image(filename, file)
+
+        # Update the product with the new brand answer path
+        product_update = ProductBrandAnswerFile(brand_answer=filename)
+        updated_product = product_crud.update(
+            db, product, product_update, active_user, increment_modified=False)
+
+        # Delete the physical old brand answer image if it exists
+        if old_brand_answer:
+            s3_file_manager.delete_file(old_brand_answer)
+
+        return updated_product
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error uploading image: {str(e)}"
+        ) from e
+
+
+@router.delete("/{id}/brand-answer", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(RoleChecker(["contributor", "admin"]))])
+def delete_product_brand_answer(
+    *,
+    db: Session = Depends(get_db),
+    id: int,
+    active_user: User = Depends(get_current_active_user),
+):
+    """
+    Delete the brand answer photo of a product.
+
+    id (int): The ID of the product to be updated.
+    """
+
+    # Check if the product exists
+    product = product_crud.get_one(db, Product.id == id)
+    if not product:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Product with id {id} not found"
+        )
+
+    try:
+        # Delete the physical file if it exists
+        if product.brand_answer:
+            s3_file_manager.delete_file(product.brand_answer)
+
+        # Update the product to remove the brand answer path
+        product_update = ProductBrandAnswerFile(brand_answer=None)
         product_crud.update(db, product, product_update, active_user, increment_modified=False)
 
     except Exception as e:

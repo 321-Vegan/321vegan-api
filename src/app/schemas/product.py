@@ -25,6 +25,7 @@ class ProductBase(BaseModel):
     has_non_vegan_old_receipe: Optional[bool] = None
     last_modified_by: Optional[int] = None
     image: Optional[str] = None
+    brand_answer: Optional[str] = None
     interesting_product_id: Optional[int] = None
 
 
@@ -38,6 +39,10 @@ class ProductUpdate(ProductBase):
 
 class ProductFile(BaseModel):
     image: Optional[str] = None
+
+
+class ProductBrandAnswerFile(BaseModel):
+    brand_answer: Optional[str] = None
 
 
 class ProductInDB(ProductBase):
@@ -66,6 +71,7 @@ class ProductOut(BaseModel):
     last_requested_on: Optional[datetime] = None
     last_requested_by: Optional[str] = None
     image: Optional[str] = None
+    brand_answer: Optional[str] = None
 
     class Config:
         from_attributes = True
