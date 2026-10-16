@@ -1,7 +1,6 @@
 from typing import List, Optional, TYPE_CHECKING
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from datetime import datetime, timezone
-from app.schemas.error_report import ErrorReportOut
 
 
 class ScanSummaryItem(BaseModel):
@@ -42,13 +41,12 @@ class UserOut(UserBase):
     nb_products_sent: int = 0
     nb_products_modified: int = 0
     nb_checkings: int = 0
-    # Deprecated: kept for retrocompatibility, use nb_error_reports and
-    # GET /error-reports/me instead
-    error_reports: List['ErrorReportOut'] = []
+    # Use GET /me/error-reports to fetch the list
     nb_error_reports: int = 0
     supporter: int = 0
     subscription_bypass: bool = False
     subscription_status: Optional[str] = None
+    is_premium: bool = False
     scan_count: int = 0
     scanned_products: List[ScanSummaryItem] = []
 

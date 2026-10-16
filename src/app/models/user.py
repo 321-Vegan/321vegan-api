@@ -1,9 +1,12 @@
 import enum
 from datetime import datetime
-from sqlalchemy import Column, Integer, SmallInteger, String, Boolean, Enum, DateTime
-from sqlalchemy.orm import relationship
+from sqlalchemy import Column, Integer, SmallInteger, String, Boolean, Enum, DateTime, func
+from sqlalchemy.orm import relationship, object_session, with_parent
 from sqlalchemy.ext.hybrid import hybrid_method
 from app.database.base_class import Base
+from app.models.subscription import SubscriptionStatus
+from app.models.checking import Checking
+from app.models.error_report import ErrorReport
 
 
 class UserRole(str, enum.Enum):
@@ -42,6 +45,7 @@ class User(Base):
     error_reports = relationship("ErrorReport", back_populates="user")
     shops = relationship("Shop", back_populates="user")
     shop_reviews = relationship("ShopReview", back_populates="user")
+    product_reviews = relationship("ProductReview", back_populates="user")
     scan_events = relationship("ScanEvent", back_populates="user")
     not_found_reports = relationship(
         "ProductNotFoundReport", back_populates="user")
@@ -54,15 +58,23 @@ class User(Base):
         cascade="all, delete",
         passive_deletes=True,)
 
+    def _count(self, model, relationship_attr) -> int:
+        """Count the user's rows of a relationship without loading them"""
+        session = object_session(self)
+        if session is None:
+            return 0
+        return session.query(func.count(model.id)).filter(
+            with_parent(self, relationship_attr)).scalar() or 0
+
     @property
     def nb_checkings(self) -> int:
         """Return the number of checkings made by the user"""
-        return len(self.checkings) if self.checkings else 0
+        return self._count(Checking, User.checkings)
 
     @property
     def nb_error_reports(self) -> int:
         """Return the number of error reports made by the user"""
-        return len(self.error_reports) if self.error_reports else 0
+        return self._count(ErrorReport, User.error_reports)
 
     @property
     def subscription_status(self):
@@ -72,6 +84,13 @@ class User(Base):
         latest = max(self.subscriptions,
                      key=lambda s: s.created_at or datetime.min)
         return latest.status
+
+    @property
+    def is_premium(self) -> bool:
+        """Return True if the user has premium access (bypass or active/grace subscription)"""
+        if self.subscription_bypass:
+            return True
+        return self.subscription_status in (SubscriptionStatus.ACTIVE, SubscriptionStatus.GRACE_PERIOD)
 
     @property
     def roles(self) -> list:

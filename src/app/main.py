@@ -40,6 +40,7 @@ from app.routes import (
     product_not_found_report_router,
     product_found_report_router,
     shop_review_router,
+    product_review_router,
     b12_intake_router,
 )
 from app.log import get_logger
@@ -120,6 +121,7 @@ app.include_router(webhook_router, prefix="/webhooks", tags=["webhook"])
 app.include_router(product_not_found_report_router, prefix="/product-not-found-reports", tags=["product_not_found_report"])
 app.include_router(product_found_report_router, prefix="/product-found-reports", tags=["product_found_report"])
 app.include_router(shop_review_router, prefix="/shop-reviews", tags=["shop_review"])
+app.include_router(product_review_router, prefix="/product-reviews", tags=["product_review"])
 app.include_router(b12_intake_router, prefix="/b12-intakes", tags=["b12_intake"])
 
 # Serve static files

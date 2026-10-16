@@ -18,4 +18,5 @@ from app.models.subscription import Subscription, SubscriptionEvent, Subscriptio
 from app.models.product_not_found_report import ProductNotFoundReport
 from app.models.product_found_report import ProductFoundReport
 from app.models.shop_review import ShopReview, ShopReviewStatus
+from app.models.product_review import ProductReview, ProductReviewStatus
 from app.models.b12_intake import B12Intake, B12IntakeFrequency

@@ -6,6 +6,7 @@ from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship
 from app.database.base_class import Base
 from app.models.checking import Checking
+from app.models.product_review import ProductReview
 from app.models.brand import Brand
 from app.models.user import User
 
@@ -69,6 +70,11 @@ class Product(Base):
                              passive_deletes=True,
                              lazy="selectin",
                              order_by=lambda: desc(Checking.requested_on))
+    reviews = relationship("ProductReview",
+                           back_populates="product",
+                           cascade="all, delete",
+                           passive_deletes=True,
+                           order_by=lambda: desc(ProductReview.created_at))
 
     @hybrid_property
     def brand_name(self):

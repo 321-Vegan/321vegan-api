@@ -260,7 +260,7 @@ def delete_review(
             status_code=status.HTTP_404_NOT_FOUND, detail="Review not found"
         )
     if review.user_id != current_user.id:
-        if not current_user.is_admin:
+        if not current_user.is_admin():
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, detail="You can only delete your own reviews"
             )

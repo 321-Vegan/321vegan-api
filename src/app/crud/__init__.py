@@ -15,6 +15,7 @@ from app.crud import scoring
 from app.crud.subscription import subscription_crud
 from app.crud.product_not_found_report import product_not_found_report_crud
 from app.crud.shop_review import shop_review_crud
+from app.crud.product_review import product_review_crud
 from app.crud.b12_intake import b12_intake_crud
 
 __all__ = [
@@ -35,5 +36,6 @@ __all__ = [
     "subscription_crud",
     "product_not_found_report_crud",
     "shop_review_crud",
+    "product_review_crud",
     "b12_intake_crud",
 ]

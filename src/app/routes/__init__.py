@@ -23,6 +23,7 @@ from app.routes.webhook import router as webhook_router
 from app.routes.product_not_found_report import router as product_not_found_report_router
 from app.routes.product_found_report import router as product_found_report_router
 from app.routes.shop_review import router as shop_review_router
+from app.routes.product_review import router as product_review_router
 from app.routes.b12_intake import router as b12_intake_router
 
 
@@ -52,5 +53,6 @@ __all__ = [
     "product_not_found_report_router",
     "product_found_report_router",
     "shop_review_router",
+    "product_review_router",
     "b12_intake_router",
 ]
