@@ -4,12 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.routes.dependencies import get_current_active_user, get_pagination_params, get_sort_by_params, RoleChecker
+from app.routes.dependencies import get_current_active_user, get_current_active_user_or_client, get_pagination_params, get_sort_by_params, RoleChecker
 from app.crud.product import product_crud
 from app.crud.product_review import product_review_crud
 from app.database.db import get_db
 from app.log import get_logger
-from app.models import User, Product
+from app.models import User, Product, ApiClient
 from app.models.product_review import ProductReview, ProductReviewStatus
 from app.schemas.product_review import (
     ProductReviewCreate,
@@ -24,7 +24,7 @@ from app.schemas.product_review import (
 
 log = get_logger(__name__)
 
-router = APIRouter(dependencies=[Depends(get_current_active_user)])
+router = APIRouter()
 
 
 def _clean_comment(comment: Optional[str]) -> Optional[str]:
@@ -40,22 +40,28 @@ def _status_for_comment(comment: Optional[str]) -> ProductReviewStatus:
     return ProductReviewStatus.PENDING if comment else ProductReviewStatus.APPROVED
 
 
-def _visible_filters(filter_params: ProductReviewFilters, current_user: User) -> dict:
+def _is_admin(current: User | ApiClient) -> bool:
+    return isinstance(current, User) and current.is_admin()
+
+
+def _visible_filters(filter_params: ProductReviewFilters, current: User | ApiClient) -> dict:
     """
-    Non-admin users can only see approved reviews, except their own ones.
+    Non-admin users and api clients can only see approved reviews,
+    except users for their own ones.
     """
     filters = filter_params.model_dump(exclude_none=True)
-    if not current_user.is_admin() and filters.get("user_id") != current_user.id:
+    own = isinstance(current, User) and filters.get("user_id") == current.id
+    if not _is_admin(current) and not own:
         filters.pop("status__ne", None)
         filters["status"] = ProductReviewStatus.APPROVED.value
     return filters
 
 
-def _can_see(review: ProductReview, current_user: User) -> bool:
+def _can_see(review: ProductReview, current: User | ApiClient) -> bool:
     return (
         review.status == ProductReviewStatus.APPROVED
-        or review.user_id == current_user.id
-        or current_user.is_admin()
+        or (isinstance(current, User) and review.user_id == current.id)
+        or _is_admin(current)
     )
 
 
@@ -104,6 +110,7 @@ def create_review(
 ) -> ProductReviewOut:
     """
     Create a product review. One review per user per product.
+    The product is given by its product_id or its ean.
 
     A review with a comment is pending until moderated, a rating
     without comment is approved directly.
@@ -116,12 +123,17 @@ def create_review(
     Returns:
         ProductReviewOut: The created review.
     """
-    product = product_crud.get_one(db, Product.id == review_in.product_id)
+    if review_in.product_id is not None:
+        product = product_crud.get_one(db, Product.id == review_in.product_id)
+    else:
+        product = product_crud.get_one(db, Product.ean == review_in.ean)
     if product is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Product not found"
         )
 
+    review_in.product_id = product.id
+    review_in.ean = None
     review_in.user_id = current_user.id
     review_in.comment = _clean_comment(review_in.comment)
     review_in.status = _status_for_comment(review_in.comment)
@@ -147,7 +159,7 @@ def fetch_reviews(
     pagination_params: Tuple[int, int] = Depends(get_pagination_params),
     orderby_params: Tuple[str, bool] = Depends(get_sort_by_params),
     filter_params: ProductReviewFilters = Depends(),
-    current_user: User = Depends(get_current_active_user),
+    current: User | ApiClient = Depends(get_current_active_user_or_client),
 ) -> ProductReviewOutPaginated:
     """
     Search reviews with filters and pagination.
@@ -162,7 +174,7 @@ def fetch_reviews(
         pagination_params (Tuple[int, int]): Pagination (skip, limit).
         orderby_params (Tuple[str, bool]): Sorting (field, descending).
         filter_params (ProductReviewFilters): Filter parameters.
-        current_user (User): The current authenticated user.
+        current (User | ApiClient): The current authenticated user or api client.
 
     Returns:
         ProductReviewOutPaginated: Paginated list of reviews.
@@ -175,7 +187,7 @@ def fetch_reviews(
         limit=size,
         order_by=sortby,
         descending=descending,
-        **_visible_filters(filter_params, current_user)
+        **_visible_filters(filter_params, current)
     )
     pages = (total + size - 1) // size
     return {
@@ -191,6 +203,7 @@ def fetch_reviews(
     "/products/{product_id}/summary",
     response_model=ProductReviewSummaryOut,
     status_code=status.HTTP_200_OK,
+    dependencies=[Depends(get_current_active_user_or_client)]
 )
 def fetch_product_review_summary(
     product_id: int,
@@ -213,6 +226,7 @@ def fetch_product_review_summary(
     "/products/ean/{ean}/summary",
     response_model=ProductReviewSummaryOut,
     status_code=status.HTTP_200_OK,
+    dependencies=[Depends(get_current_active_user_or_client)]
 )
 def fetch_product_review_summary_by_ean(
     ean: str,
@@ -245,7 +259,7 @@ def fetch_product_review_summary_by_ean(
 def fetch_review_by_id(
     id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current: User | ApiClient = Depends(get_current_active_user_or_client),
 ) -> ProductReviewOut:
     """
     Fetch a review by ID.
@@ -253,13 +267,13 @@ def fetch_review_by_id(
     Parameters:
         id (int): The review ID.
         db (Session): The database session.
-        current_user (User): The current authenticated user.
+        current (User | ApiClient): The current authenticated user or api client.
 
     Returns:
         ProductReviewOut: The review.
     """
     review = product_review_crud.get_by_id(db, id)
-    if review is None or not _can_see(review, current_user):
+    if review is None or not _can_see(review, current):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Review not found"
         )
@@ -336,7 +350,7 @@ def delete_review(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Review not found"
         )
-    if review.user_id != current_user.id and not current_user.is_admin():
+    if review.user_id != current_user.id and not _is_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="You can only delete your own reviews"
         )

@@ -7,6 +7,7 @@ from app.database.base_class import Base
 from app.models.subscription import SubscriptionStatus
 from app.models.checking import Checking
 from app.models.error_report import ErrorReport
+from app.models.product_review import ProductReview
 
 
 class UserRole(str, enum.Enum):
@@ -75,6 +76,11 @@ class User(Base):
     def nb_error_reports(self) -> int:
         """Return the number of error reports made by the user"""
         return self._count(ErrorReport, User.error_reports)
+
+    @property
+    def nb_product_reviews(self) -> int:
+        """Return the number of product reviews posted by the user"""
+        return self._count(ProductReview, User.product_reviews)
 
     @property
     def subscription_status(self):

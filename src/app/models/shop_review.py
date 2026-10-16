@@ -41,3 +41,7 @@ class ShopReview(Base):
     @hybrid_property
     def user_nickname(self) -> Optional[str]:
         return self.user.nickname if self.user else None
+
+    @property
+    def user_is_premium(self) -> bool:
+        return self.user.is_premium if self.user else False

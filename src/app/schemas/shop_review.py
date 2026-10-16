@@ -8,6 +8,7 @@ class UserOut(BaseModel):
     id: int
     nickname: str
     avatar: Optional[str] = None
+    is_premium: bool = False
 
 
 class ShopOut(BaseModel):
@@ -43,6 +44,7 @@ class ShopReviewOut(BaseModel):
     shop: ShopOut
     user_id: Optional[int] = None
     user_nickname: Optional[str] = None
+    user_is_premium: bool = False
     user: UserOut
     rating: int
     comment: Optional[str] = None

@@ -3,6 +3,7 @@ from urllib.parse import urlencode
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from app.config import settings
@@ -87,7 +88,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     log.error(f"Request body: {body}")
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content={"detail": exc.errors(), "body": body},
+        content=jsonable_encoder({"detail": exc.errors(), "body": body}),
     )
 
 app.include_router(auth_router, prefix="/auth", tags=["authentication"])

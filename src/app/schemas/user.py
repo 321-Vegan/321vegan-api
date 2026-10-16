@@ -43,6 +43,7 @@ class UserOut(UserBase):
     nb_checkings: int = 0
     # Use GET /me/error-reports to fetch the list
     nb_error_reports: int = 0
+    nb_product_reviews: int = 0
     supporter: int = 0
     subscription_bypass: bool = False
     subscription_status: Optional[str] = None

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Dict, Optional
 from datetime import datetime, timezone
 from app.models.product_review import ProductReviewStatus
@@ -22,11 +22,19 @@ class ProductOut(BaseModel):
 
 
 class ProductReviewCreate(BaseModel):
-    product_id: int
+    # One of product_id or ean is required
+    product_id: Optional[int] = None
+    ean: Optional[str] = None
     rating: int = Field(..., ge=0, le=5)
     comment: Optional[str] = Field(None, max_length=2000)
     user_id: Optional[int] = None
     status: Optional[ProductReviewStatus] = None
+
+    @model_validator(mode="after")
+    def check_product_reference(self):
+        if self.product_id is None and not self.ean:
+            raise ValueError("product_id or ean is required")
+        return self
 
 
 class ProductReviewUpdate(BaseModel):
