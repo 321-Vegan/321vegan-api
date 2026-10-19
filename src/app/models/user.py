@@ -118,4 +118,4 @@ class User(Base):
 
     @hybrid_method
     def has_role(self, role) -> bool:
-        return role in self.roles()
+        return role in self.roles
