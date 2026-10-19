@@ -11,6 +11,7 @@ from app.database.db import get_db
 from app.log import get_logger
 from app.models import User, Product, ApiClient
 from app.models.product_review import ProductReview, ProductReviewStatus
+from app.models.user import UserRole
 from app.schemas.product_review import (
     ProductReviewCreate,
     ProductReviewUpdate,
@@ -40,18 +41,18 @@ def _status_for_comment(comment: Optional[str]) -> ProductReviewStatus:
     return ProductReviewStatus.PENDING if comment else ProductReviewStatus.APPROVED
 
 
-def _is_admin(current: User | ApiClient) -> bool:
-    return isinstance(current, User) and current.is_admin()
+def _is_moderator(current: User | ApiClient) -> bool:
+    return isinstance(current, User) and current.has_role(UserRole.CONTRIBUTOR)
 
 
 def _visible_filters(filter_params: ProductReviewFilters, current: User | ApiClient) -> dict:
     """
-    Non-admin users and api clients can only see approved reviews,
+    Non-moderator users and api clients can only see approved reviews,
     except users for their own ones.
     """
     filters = filter_params.model_dump(exclude_none=True)
     own = isinstance(current, User) and filters.get("user_id") == current.id
-    if not _is_admin(current) and not own:
+    if not _is_moderator(current) and not own:
         filters.pop("status__ne", None)
         filters["status"] = ProductReviewStatus.APPROVED.value
     return filters
@@ -61,7 +62,7 @@ def _can_see(review: ProductReview, current: User | ApiClient) -> bool:
     return (
         review.status == ProductReviewStatus.APPROVED
         or (isinstance(current, User) and review.user_id == current.id)
-        or _is_admin(current)
+        or _is_moderator(current)
     )
 
 
@@ -165,9 +166,9 @@ def fetch_reviews(
     Search reviews with filters and pagination.
 
     Filterable by product_id, product___ean, user_id, status...
-    Non-admin users only get approved reviews, except when filtering
+    Non-moderator users only get approved reviews, except when filtering
     on their own user_id (to display their profile).
-    Admins can filter by status=PENDING for moderation.
+    Moderators (contributors and admins) can filter by status=PENDING for moderation.
 
     Parameters:
         db (Session): The database session.
@@ -338,7 +339,7 @@ def delete_review(
     current_user: User = Depends(get_current_active_user),
 ) -> None:
     """
-    Delete a product review. Author or admin only.
+    Delete a product review. Author or moderator (contributor or admin) only.
 
     Parameters:
         id (int): The review ID.
@@ -350,7 +351,7 @@ def delete_review(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Review not found"
         )
-    if review.user_id != current_user.id and not _is_admin(current_user):
+    if review.user_id != current_user.id and not _is_moderator(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="You can only delete your own reviews"
         )
@@ -363,7 +364,7 @@ def delete_review(
     "/{id}/status",
     response_model=ProductReviewOut,
     status_code=status.HTTP_200_OK,
-    dependencies=[Depends(RoleChecker(["admin"]))]
+    dependencies=[Depends(RoleChecker(["contributor", "admin"]))]
 )
 def update_review_status(
     id: int,
@@ -372,13 +373,13 @@ def update_review_status(
     current_user: User = Depends(get_current_active_user),
 ) -> ProductReviewOut:
     """
-    Approve or reject a review (admin only).
+    Approve or reject a review (contributor or admin only).
 
     Parameters:
         id (int): The review ID.
         status_in (ProductReviewStatusUpdate): The new status.
         db (Session): The database session.
-        current_user (User): The current admin user.
+        current_user (User): The current moderator user.
 
     Returns:
         ProductReviewOut: The updated review.
@@ -390,6 +391,4 @@ def update_review_status(
         )
 
     updated_review = product_review_crud.update(db, review, status_in)
-    log.info(
-        f"Product review {id} status updated to {status_in.status} by admin {current_user.id}")
     return updated_review

@@ -10,6 +10,7 @@ from app.crud.shop_review import shop_review_crud
 from app.database.db import get_db
 from app.log import get_logger
 from app.models import User
+from app.models.user import UserRole
 from app.models.shop_review import ShopReviewStatus
 from app.schemas.shop_review import (
     ShopReviewCreate,
@@ -114,7 +115,7 @@ def fetch_reviews(
     Search reviews with filters and pagination.
 
     Filterable by shop_id, user_id, status.
-    Admins can filter by status=PENDING for moderation.
+    Moderators can filter by status=PENDING for moderation.
 
     Parameters:
         filter_params (ShopReviewFilters): Filter parameters.
@@ -247,7 +248,7 @@ def delete_review(
     current_user: User = Depends(get_current_active_user),
 ) -> None:
     """
-    Delete a shop review. Author or admin only.
+    Delete a shop review. Author or moderator (contributor or admin) only.
 
     Parameters:
         id (int): The review ID.
@@ -260,7 +261,7 @@ def delete_review(
             status_code=status.HTTP_404_NOT_FOUND, detail="Review not found"
         )
     if review.user_id != current_user.id:
-        if not current_user.is_admin():
+        if not current_user.has_role(UserRole.CONTRIBUTOR):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, detail="You can only delete your own reviews"
             )
@@ -273,7 +274,7 @@ def delete_review(
     "/{id}/status",
     response_model=ShopReviewOut,
     status_code=status.HTTP_200_OK,
-    dependencies=[Depends(RoleChecker(["admin"]))]
+    dependencies=[Depends(RoleChecker(["contributor", "admin"]))]
 )
 def update_review_status(
     id: int,
@@ -282,13 +283,13 @@ def update_review_status(
     current_user: User = Depends(get_current_active_user),
 ) -> ShopReviewOut:
     """
-    Approve or reject a review (admin only).
+    Approve or reject a review (contributor or admin only).
 
     Parameters:
         id (int): The review ID.
         status_in (ShopReviewStatusUpdate): The new status.
         db (Session): The database session.
-        current_user (User): The current admin user.
+        current_user (User): The current moderator user.
 
     Returns:
         ShopReviewOut: The updated review.
@@ -301,5 +302,5 @@ def update_review_status(
 
     updated_review = shop_review_crud.update(db, review, status_in)
     log.info(
-        f"Shop review {id} status updated to {status_in.status} by admin {current_user.id}")
+        f"Shop review {id} status updated to {status_in.status} by moderator {current_user.id}")
     return updated_review
