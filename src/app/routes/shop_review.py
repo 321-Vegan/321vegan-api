@@ -301,6 +301,4 @@ def update_review_status(
         )
 
     updated_review = shop_review_crud.update(db, review, status_in)
-    log.info(
-        f"Shop review {id} status updated to {status_in.status} by moderator {current_user.id}")
     return updated_review
