@@ -251,8 +251,9 @@ class ShopCRUDRepository(CRUDRepository):
         Get distinct EANs scanned at a shop with scan count, last scan date,
         not-found report stats, and a computed presence score.
 
-        Only not-found reports that occurred AFTER the last scan for that EAN
-        are considered relevant (a scan after a report proves restocking).
+        Only not-found reports that occurred AFTER the last sighting (scan or
+        found report) for that EAN are considered relevant (a sighting after
+        a report proves restocking).
 
         Parameters:
             db (Session): The database session.
@@ -281,8 +282,6 @@ class ShopCRUDRepository(CRUDRepository):
         report_subq = (
             db.query(
                 ProductNotFoundReport.ean,
-                func.count(ProductNotFoundReport.id).label("not_found_count"),
-                func.max(ProductNotFoundReport.created_at).label("last_not_found_at"),
                 array_agg(ProductNotFoundReport.created_at).label("report_dates"),
             )
             .join(
@@ -323,8 +322,6 @@ class ShopCRUDRepository(CRUDRepository):
                 scan_subq.c.ean,
                 scan_subq.c.scan_count,
                 scan_subq.c.last_scanned_at,
-                func.coalesce(report_subq.c.not_found_count, 0).label("not_found_count"),
-                report_subq.c.last_not_found_at,
                 report_subq.c.report_dates,
                 func.coalesce(found_subq.c.found_count, 0).label("found_count"),
                 found_subq.c.last_found_at,
@@ -343,16 +340,21 @@ class ShopCRUDRepository(CRUDRepository):
             report_dates = [d for d in (row.report_dates or []) if d is not None]
             found_dates = [d for d in (row.found_dates or []) if d is not None]
 
+            # A found report is a sighting, just like a scan: only not-found
+            # reports made after the most recent sighting are still relevant.
+            last_seen_at = max([row.last_scanned_at, *found_dates])
+            relevant_report_dates = [d for d in report_dates if d > last_seen_at]
+
             presence_score = self._compute_presence_score(
-                now, row.last_scanned_at, row.scan_count, report_dates, found_dates,
+                now, last_seen_at, row.scan_count, relevant_report_dates,
             )
 
             summaries.append({
                 "ean": row.ean,
                 "scan_count": row.scan_count,
                 "last_scanned_at": row.last_scanned_at,
-                "not_found_count": row.not_found_count,
-                "last_not_found_at": row.last_not_found_at,
+                "not_found_count": len(relevant_report_dates),
+                "last_not_found_at": max(relevant_report_dates, default=None),
                 "found_count": row.found_count,
                 "last_found_at": row.last_found_at,
                 "presence_score": round(presence_score, 2),
@@ -363,42 +365,34 @@ class ShopCRUDRepository(CRUDRepository):
     @staticmethod
     def _compute_presence_score(
         now: datetime,
-        last_scanned_at: datetime,
+        last_seen_at: datetime,
         scan_count: int,
         report_dates: list[datetime],
-        found_dates: list[datetime],
     ) -> float:
         """
         Compute a presence score between 0.0 and 1.0.
 
-        - Starts at 0.99 right after a scan.
+        - Starts at 0.99 right after a sighting (scan or found report).
         - Frequency (scan count capped at 10) extends the decay window:
           1 scan → 36-day window, 10 scans → 90-day window.
         - Decay is quadratic (n=2): slow at first, accelerating over time.
-        - Penalty: each relevant not-found report subtracts up to 0.1,
-          decaying linearly over 30 days.
-        - Bonus: each relevant found report adds up to 0.6,
-          decaying linearly over 30 days (counteracts not-found penalties).
-        - Floor: score never drops below 0.1 when no not-found reports exist.
+        - Penalty: each not-found report made after the last sighting
+          subtracts up to 0.25, decaying linearly over 30 days.
+        - Floor: score never drops below 0.15 when no such report exists.
         """
-        days_since_scan = (now - last_scanned_at).total_seconds() / 86400
+        days_since_seen = (now - last_seen_at).total_seconds() / 86400
         frequency = max(0.0, min(1.0, scan_count / 10))
 
         effective_window = 30 * (1 + frequency * 2)
-        freshness = max(0.0, 1.0 - (days_since_scan / effective_window) ** 2)
+        freshness = max(0.0, 1.0 - (days_since_seen / effective_window) ** 2)
 
         penalty = 0.0
         for date in report_dates:
             days_ago = (now - date).total_seconds() / 86400
-            penalty += 0.1 * max(0.0, 1.0 - days_ago / 30)
-
-        bonus = 0.0
-        for date in found_dates:
-            days_ago = (now - date).total_seconds() / 86400
-            bonus += 0.6 * max(0.0, 1.0 - days_ago / 30)
+            penalty += 0.25 * max(0.0, 1.0 - days_ago / 30)
 
         min_score = 0.0 if report_dates else 0.15
-        return max(min_score, min(0.99, freshness - penalty + bonus))
+        return max(min_score, min(0.99, freshness - penalty))
 
     def get_shops_by_eans(self, db: Session, eans: List[str]) -> List[int]:
         """
