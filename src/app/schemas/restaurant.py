@@ -1,5 +1,5 @@
 from datetime import date, datetime, timezone
-from typing import List, Optional
+from typing import List, NamedTuple, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from app.models.restaurant import RestaurantVeganStatus, RestaurantOperatingStatus, RestaurantTag
 from app.models.restaurant_photo import RestaurantPhotoStatus
@@ -142,6 +142,42 @@ class RestaurantBase(BaseModel):
 
 class RestaurantCreate(RestaurantBase):
     pass
+
+
+class RestaurantChange(NamedTuple):
+    """A change of a restaurant, limited to the fields it really changes."""
+    # New values to set on the restaurant, by field
+    values: dict
+    # JSON values of those fields, before and after
+    before: dict
+    after: dict
+
+
+def restaurant_state(restaurant) -> dict:
+    """Current values of a restaurant's RestaurantBase fields."""
+    return {field: getattr(restaurant, field) for field in RestaurantBase.model_fields}
+
+
+def compute_restaurant_change(restaurant, changes: dict) -> RestaurantChange:
+    """
+    Merge changes into a restaurant and check the business rules on the
+    result. Fields set to their current value are left out.
+
+    Raises:
+        ValidationError: If the restaurant as it would be breaks a rule.
+    """
+    current = restaurant_state(restaurant)
+    current_json = RestaurantBase.model_validate(current).model_dump(mode="json")
+    new_state = RestaurantBase.model_validate({**current, **changes})
+    new_json = new_state.model_dump(mode="json")
+    new_values = new_state.model_dump()
+    changed = [field for field in RestaurantBase.model_fields
+               if new_json[field] != current_json[field]]
+    return RestaurantChange(
+        values={field: new_values[field] for field in changed},
+        before={field: current_json[field] for field in changed},
+        after={field: new_json[field] for field in changed},
+    )
 
 
 class RestaurantUpdate(BaseModel):

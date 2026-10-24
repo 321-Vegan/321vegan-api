@@ -18,7 +18,7 @@ from app.models.restaurant import Restaurant, RestaurantTag, RestaurantVeganStat
 from app.models.restaurant_photo import RestaurantPhoto, RestaurantPhotoKind, RestaurantPhotoStatus
 from app.services.s3_file_manager import s3_file_manager
 from app.schemas.restaurant import (
-    RestaurantBase,
+    compute_restaurant_change,
     RestaurantCreate,
     RestaurantUpdate,
     RestaurantOut,
@@ -450,23 +450,12 @@ def update_restaurant(
         )
 
     # Check the business rules on the restaurant as it will be
-    current = {field: getattr(restaurant, field)
-               for field in RestaurantBase.model_fields}
     try:
-        current_state = RestaurantBase.model_validate(current)
-        new_state = RestaurantBase.model_validate({**current, **changes})
+        values, before, after = compute_restaurant_change(restaurant, changes)
     except ValidationError as e:
         raise RequestValidationError(
             e.errors(include_url=False, include_context=False))
 
-    current_json = current_state.model_dump(mode="json")
-    new_json = new_state.model_dump(mode="json")
-    new_values = new_state.model_dump()
-    changed = [field for field in RestaurantBase.model_fields
-               if new_json[field] != current_json[field]]
-    values = {field: new_values[field] for field in changed}
-    before = {field: current_json[field] for field in changed}
-    after = {field: new_json[field] for field in changed}
     if validated is not None and validated != restaurant.validated:
         values['validated'] = validated
         before['validated'] = restaurant.validated

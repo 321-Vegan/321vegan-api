@@ -1,5 +1,6 @@
 import enum
 from datetime import datetime
+from typing import Optional
 from sqlalchemy import Column, Integer, String, Text, DateTime, Enum, ForeignKey, Index, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
@@ -64,3 +65,7 @@ class RestaurantEditSuggestion(Base):
     duplicate_of = relationship("Restaurant", foreign_keys=[duplicate_of_id])
     user = relationship("User", foreign_keys=[user_id])
     reviewer = relationship("User", foreign_keys=[reviewed_by])
+
+    @property
+    def user_nickname(self) -> Optional[str]:
+        return self.user.nickname if self.user else None
