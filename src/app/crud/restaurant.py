@@ -1,13 +1,14 @@
-from typing import Optional, List, Tuple
+from collections import defaultdict
+from typing import Dict, Optional, List, Tuple
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session, noload
 from sqlalchemy import func, or_
 from app.crud.base import CRUDRepository
 from app.crud.filters import buildQueryFilters
 from app.geo import haversine_distance, bounding_box_deltas
-from app.models.restaurant import Restaurant, RestaurantOperatingStatus
+from app.models.restaurant import Restaurant, RestaurantOperatingStatus, RestaurantVeganStatus
 from app.models.restaurant_edit import RestaurantEdit
-from app.models.restaurant_photo import RestaurantPhoto, RestaurantPhotoStatus
+from app.models.restaurant_photo import RestaurantPhoto, RestaurantPhotoKind, RestaurantPhotoStatus, pick_featured_photo
 from app.models.restaurant_review import RestaurantReview, RestaurantReviewStatus
 
 
@@ -157,6 +158,7 @@ class RestaurantCRUDRepository(CRUDRepository):
         max_lng: float,
         user_id: int,
         filters: dict = None,
+        max_plant_milk_surcharge: Optional[float] = None,
         limit: int = 300
     ) -> List[Tuple[Restaurant, Optional[float], Optional[int]]]:
         """
@@ -172,6 +174,9 @@ class RestaurantCRUDRepository(CRUDRepository):
             max_lng (float): Maximum longitude.
             user_id (int): The current user ID.
             filters (dict): Extra filter parameters (tags__overlap, vegan_status...).
+            max_plant_milk_surcharge (Optional[float]): Keep restaurants whose
+                plant milk surcharge is at most this value, and the fully vegan
+                ones (no cow milk to compare with).
             limit (int): Maximum number of restaurants to return (default 300).
 
         Returns:
@@ -201,6 +206,11 @@ class RestaurantCRUDRepository(CRUDRepository):
                 self._model.created_by == user_id),
         )
         query = buildQueryFilters(self._model, query, filters or {})
+        if max_plant_milk_surcharge is not None:
+            query = query.filter(or_(
+                self._model.plant_milk_surcharge <= max_plant_milk_surcharge,
+                self._model.vegan_status == RestaurantVeganStatus.FULLY_VEGAN,
+            ))
         return query.limit(limit).all()
 
     def find_all_nearby(
@@ -262,6 +272,59 @@ class RestaurantCRUDRepository(CRUDRepository):
 
 
 class RestaurantPhotoCRUDRepository(CRUDRepository):
+    def get_featured_by_restaurant(self, db: Session, restaurant_ids: List[int]) -> Dict[int, RestaurantPhoto]:
+        """
+        Get the featured photo of several restaurants at once (map pins),
+        without loading all their photos.
+
+        Parameters:
+            db (Session): The database session.
+            restaurant_ids (List[int]): The restaurant IDs.
+
+        Returns:
+            Dict[int, RestaurantPhoto]: The featured photo by restaurant ID,
+                for those having one.
+        """
+        if not restaurant_ids:
+            return {}
+        candidates = db.query(self._model).filter(
+            self._model.restaurant_id.in_(restaurant_ids),
+            self._model.review_id.is_(None),
+            self._model.status == RestaurantPhotoStatus.APPROVED,
+            or_(self._model.is_featured.is_(True),
+                self._model.kind == RestaurantPhotoKind.PLACE),
+        ).all()
+        by_restaurant = defaultdict(list)
+        for photo in candidates:
+            by_restaurant[photo.restaurant_id].append(photo)
+        return {
+            restaurant_id: pick_featured_photo(photos)
+            for restaurant_id, photos in by_restaurant.items()
+        }
+
+    def set_featured(self, db: Session, photo: RestaurantPhoto) -> RestaurantPhoto:
+        """
+        Make a photo the featured one of its restaurant, replacing the
+        previous one.
+
+        Parameters:
+            db (Session): The database session.
+            photo (RestaurantPhoto): The photo to feature.
+
+        Returns:
+            RestaurantPhoto: The featured photo.
+        """
+        db.query(self._model).filter(
+            self._model.restaurant_id == photo.restaurant_id,
+            self._model.is_featured.is_(True),
+        ).update({"is_featured": False})
+        # Unique index: the previous one must be cleared first
+        db.flush()
+        photo.is_featured = True
+        db.commit()
+        db.refresh(photo)
+        return photo
+
     def count_for_kind(self, db: Session, restaurant_id: int, kind: str) -> int:
         """
         Count the place or menu photos of a restaurant that were not rejected.

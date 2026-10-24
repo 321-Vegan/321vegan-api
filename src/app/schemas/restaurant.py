@@ -112,6 +112,9 @@ class RestaurantBase(BaseModel):
         if self.vegan_status == RestaurantVeganStatus.VEGAN_OPTIONS and not self.vegan_options_details:
             raise ValueError(
                 "vegan_options_details is required when the place is not fully vegan")
+        if self.vegan_status == RestaurantVeganStatus.FULLY_VEGAN:
+            # No cow milk to compare with
+            self.plant_milk_surcharge = None
 
         if not self.has_storefront:
             if RestaurantTag.CATERER not in self.tags:
@@ -182,6 +185,7 @@ class RestaurantPhotoOut(BaseModel):
     kind: Optional[str] = None
     path: str
     status: str
+    is_featured: bool = False
     user_id: Optional[int] = None
     created_at: datetime
 
@@ -256,6 +260,8 @@ class RestaurantOut(BaseModel):
     validated: bool
     created_at: datetime
     updated_at: datetime
+    # Approved photo shown first on the restaurant page
+    featured_photo: Optional[RestaurantPhotoOut] = None
     photos: List[RestaurantPhotoOut] = []
 
     class Config:
@@ -282,6 +288,8 @@ class RestaurantMapOut(BaseModel):
     validated: bool
     rating_avg: Optional[float] = None
     review_count: int = 0
+    # Shown right away when the restaurant page opens
+    featured_photo: Optional[RestaurantPhotoOut] = None
 
     class Config:
         from_attributes = True

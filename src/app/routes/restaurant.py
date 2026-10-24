@@ -100,10 +100,16 @@ def _restaurant_out(restaurant: Restaurant, user: User) -> RestaurantOut:
     return out.model_copy(update=update)
 
 
-def _map_out(restaurant: Restaurant, rating_avg: Optional[float] = None, review_count: Optional[int] = None) -> RestaurantMapOut:
+def _map_out(
+    restaurant: Restaurant,
+    rating_avg: Optional[float] = None,
+    review_count: Optional[int] = None,
+    featured_photo: Optional[RestaurantPhoto] = None,
+) -> RestaurantMapOut:
     return RestaurantMapOut.model_validate(restaurant).model_copy(update={
         "rating_avg": round(float(rating_avg), 1) if rating_avg is not None else None,
         "review_count": review_count or 0,
+        "featured_photo": RestaurantPhotoOut.model_validate(featured_photo) if featured_photo else None,
     })
 
 
@@ -132,7 +138,8 @@ def fetch_restaurants_in_area(
             Supports repeated params or comma-separated values.
         vegan_status (RestaurantVeganStatus): Keep only this vegan status.
         plant_milk_surcharge__le (float): Keep restaurants whose plant milk
-            surcharge is at most this value (0 = no surcharge).
+            surcharge is at most this value (0 = no surcharge). Fully vegan
+            places have no cow milk to compare with, so they are kept.
         db (Session): The database session.
         current_user (User): The current authenticated user.
 
@@ -145,11 +152,12 @@ def fetch_restaurants_in_area(
         filters['tags__overlap'] = parsed_tags
     if vegan_status is not None:
         filters['vegan_status'] = vegan_status
-    if plant_milk_surcharge__le is not None:
-        filters['plant_milk_surcharge__le'] = plant_milk_surcharge__le
     rows = restaurant_crud.get_in_bounding_box(
-        db, min_lat, max_lat, min_lng, max_lng, current_user.id, filters)
-    return [_map_out(restaurant, rating_avg, review_count)
+        db, min_lat, max_lat, min_lng, max_lng, current_user.id, filters,
+        max_plant_milk_surcharge=plant_milk_surcharge__le)
+    featured = restaurant_photo_crud.get_featured_by_restaurant(
+        db, [restaurant.id for restaurant, _, _ in rows])
+    return [_map_out(restaurant, rating_avg, review_count, featured.get(restaurant.id))
             for restaurant, rating_avg, review_count in rows]
 
 
@@ -565,6 +573,50 @@ def upload_restaurant_photo(
     log.info(
         f"Restaurant photo added: {object_name} (ID: {photo.id}) by user {current_user.id}")
     return photo
+
+
+@router.patch(
+    "/{id}/photos/{photo_id}/featured",
+    response_model=RestaurantPhotoOut,
+    status_code=status.HTTP_200_OK,
+)
+def feature_restaurant_photo(
+    id: int,
+    photo_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> RestaurantPhotoOut:
+    """
+    Make a place or menu photo the one shown first on the restaurant page,
+    replacing the previous one. A moderator, or the creator while the
+    restaurant is pending. It only shows once approved.
+
+    Parameters:
+        id (int): The ID of the restaurant.
+        photo_id (int): The ID of the photo.
+        db (Session): The database session.
+        current_user (User): The current authenticated user.
+
+    Returns:
+        RestaurantPhotoOut: The featured photo.
+    """
+    restaurant = _get_visible_restaurant(db, id, current_user)
+    if not _is_moderator(current_user) and (
+        restaurant.validated or restaurant.created_by != current_user.id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only moderators can choose the featured photo",
+        )
+    photo = restaurant_photo_crud.get_by_id(db, photo_id)
+    if photo is None or photo.restaurant_id != id or photo.review_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Photo not found"
+        )
+    featured = restaurant_photo_crud.set_featured(db, photo)
+    log.info(
+        f"Restaurant photo {photo_id} featured for restaurant {id} by user {current_user.id}")
+    return featured
 
 
 @router.delete(

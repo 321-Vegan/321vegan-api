@@ -1,11 +1,12 @@
 import enum
 from datetime import date
+from typing import Optional
 from sqlalchemy import Column, Integer, String, Float, Boolean, Date, DateTime, Numeric, Text, Enum, ForeignKey, Index, desc
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.database.base_class import Base
-from app.models.restaurant_photo import RestaurantPhoto
+from app.models.restaurant_photo import RestaurantPhoto, pick_featured_photo
 from app.models.restaurant_review import RestaurantReview
 
 
@@ -107,6 +108,11 @@ class Restaurant(Base):
                            cascade="all, delete",
                            passive_deletes=True,
                            order_by=lambda: desc(RestaurantReview.created_at))
+
+    @property
+    def featured_photo(self) -> Optional[RestaurantPhoto]:
+        """The approved photo shown first on the restaurant page."""
+        return pick_featured_photo(self.photos)
 
     @property
     def is_closed_now(self) -> bool:

@@ -53,9 +53,10 @@ class S3FileManager:
                 detail="File is too large. Maximum size: 5MB."
             )
         try:
-            # Upload the file to the S3 service
+            # Upload the file to the S3 service, typed so browsers display it
             self.s3_client.upload_fileobj(
-                file.file, self.bucket_name, object_name, ExtraArgs={'ACL': 'public-read'})
+                file.file, self.bucket_name, object_name,
+                ExtraArgs={'ACL': 'public-read', 'ContentType': file.content_type})
             return object_name
         except Exception as e:
             raise HTTPException(
