@@ -275,6 +275,8 @@ class RestaurantMapOut(BaseModel):
     tags: List[str]
     has_storefront: bool
     plant_milk_surcharge: Optional[float] = None
+    # For the "open now" filter of the map
+    opening_hours: Optional[List[OpeningSlot]] = None
     operating_status: str
     is_closed_now: bool
     validated: bool
