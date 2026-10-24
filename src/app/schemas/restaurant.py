@@ -1,7 +1,7 @@
 from datetime import date, datetime, timezone
 from typing import List, NamedTuple, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from app.models.restaurant import RestaurantVeganStatus, RestaurantOperatingStatus, RestaurantTag
+from app.models.restaurant import RestaurantVeganStatus, RestaurantOperatingStatus, RestaurantTag, RestaurantServiceOption
 from app.models.restaurant_photo import RestaurantPhotoStatus
 
 TIME_PATTERN = r"^([01]\d|2[0-3]):[0-5]\d$"
@@ -67,6 +67,7 @@ class RestaurantBase(BaseModel):
     vegan_status: RestaurantVeganStatus
     vegan_options_details: Optional[str] = Field(None, max_length=2000)
     tags: List[RestaurantTag] = Field(..., min_length=1)
+    service_options: List[RestaurantServiceOption] = []
     plant_milk_surcharge: Optional[float] = Field(
         None, ge=-MAX_PLANT_MILK_SURCHARGE, le=MAX_PLANT_MILK_SURCHARGE)
     has_storefront: bool = True
@@ -90,10 +91,10 @@ class RestaurantBase(BaseModel):
             return value or None
         return value
 
-    @field_validator("tags")
+    @field_validator("tags", "service_options")
     @classmethod
-    def dedupe_tags(cls, tags):
-        return list(dict.fromkeys(tags))
+    def dedupe(cls, values):
+        return list(dict.fromkeys(values))
 
     @field_validator("plant_milk_surcharge")
     @classmethod
@@ -117,6 +118,8 @@ class RestaurantBase(BaseModel):
             self.plant_milk_surcharge = None
 
         if not self.has_storefront:
+            if RestaurantServiceOption.DINE_IN in self.service_options:
+                raise ValueError("A place without storefront can't be dine-in")
             if RestaurantTag.CATERER not in self.tags:
                 raise ValueError(
                     "Only a caterer can have no storefront")
@@ -197,6 +200,7 @@ class RestaurantUpdate(BaseModel):
     vegan_status: Optional[RestaurantVeganStatus] = None
     vegan_options_details: Optional[str] = None
     tags: Optional[List[RestaurantTag]] = None
+    service_options: Optional[List[RestaurantServiceOption]] = None
     plant_milk_surcharge: Optional[float] = None
     has_storefront: Optional[bool] = None
     service_area: Optional[str] = None
@@ -277,6 +281,7 @@ class RestaurantOut(BaseModel):
     vegan_status: str
     vegan_options_details: Optional[str] = None
     tags: List[str]
+    service_options: List[str] = []
     plant_milk_surcharge: Optional[float] = None
     has_storefront: bool
     service_area: Optional[str] = None
@@ -315,6 +320,7 @@ class RestaurantMapOut(BaseModel):
     longitude: float
     vegan_status: str
     tags: List[str]
+    service_options: List[str] = []
     has_storefront: bool
     plant_milk_surcharge: Optional[float] = None
     # For the "open now" filter of the map

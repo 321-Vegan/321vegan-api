@@ -14,7 +14,7 @@ from app.database.db import get_db
 from app.log import get_logger
 from app.models import User
 from app.models.user import UserRole
-from app.models.restaurant import Restaurant, RestaurantTag, RestaurantVeganStatus
+from app.models.restaurant import Restaurant, RestaurantServiceOption, RestaurantTag, RestaurantVeganStatus
 from app.models.restaurant_photo import RestaurantPhoto, RestaurantPhotoKind, RestaurantPhotoStatus
 from app.services.s3_file_manager import s3_file_manager
 from app.schemas.restaurant import (
@@ -43,19 +43,23 @@ def _is_moderator(user: User) -> bool:
     return user.has_role(UserRole.CONTRIBUTOR)
 
 
-def _parse_tags(values: Optional[List[str]]) -> List[str]:
-    """Accept repeated params or comma-separated values, reject unknown tags."""
-    tags = []
+def _parse_values(values: Optional[List[str]], enum_class, what: str) -> List[str]:
+    """Accept repeated params or comma-separated values, reject unknown ones."""
+    parsed = []
     for value in values or []:
-        tags.extend(t.strip() for t in value.split(',') if t.strip())
-    known = {tag.value for tag in RestaurantTag}
-    unknown = [tag for tag in tags if tag not in known]
+        parsed.extend(v.strip() for v in value.split(',') if v.strip())
+    known = {member.value for member in enum_class}
+    unknown = [value for value in parsed if value not in known]
     if unknown:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Unknown tags: {', '.join(unknown)}",
+            detail=f"Unknown {what}: {', '.join(unknown)}",
         )
-    return tags
+    return parsed
+
+
+def _parse_tags(values: Optional[List[str]]) -> List[str]:
+    return _parse_values(values, RestaurantTag, "tags")
 
 
 def _get_visible_restaurant(db: Session, id: int, user: User) -> Restaurant:
@@ -122,6 +126,7 @@ def fetch_restaurants_in_area(
     min_lng: float = Query(..., ge=-180, le=180),
     max_lng: float = Query(..., ge=-180, le=180),
     tags: Optional[List[str]] = Query(default=None),
+    service_options: Optional[List[str]] = Query(default=None),
     vegan_status: Optional[RestaurantVeganStatus] = Query(default=None),
     plant_milk_surcharge__le: Optional[float] = Query(default=None),
     db: Session = Depends(get_db),
@@ -136,6 +141,8 @@ def fetch_restaurants_in_area(
         min_lat/max_lat/min_lng/max_lng (float): The bounding box.
         tags (List[str]): Keep restaurants with at least one of these tags.
             Supports repeated params or comma-separated values.
+        service_options (List[str]): Keep restaurants offering at least one of
+            these (dine_in, takeaway, delivery).
         vegan_status (RestaurantVeganStatus): Keep only this vegan status.
         plant_milk_surcharge__le (float): Keep restaurants whose plant milk
             surcharge is at most this value (0 = no surcharge). Fully vegan
@@ -150,6 +157,10 @@ def fetch_restaurants_in_area(
     parsed_tags = _parse_tags(tags)
     if parsed_tags:
         filters['tags__overlap'] = parsed_tags
+    parsed_options = _parse_values(
+        service_options, RestaurantServiceOption, "service options")
+    if parsed_options:
+        filters['service_options__overlap'] = parsed_options
     if vegan_status is not None:
         filters['vegan_status'] = vegan_status
     rows = restaurant_crud.get_in_bounding_box(

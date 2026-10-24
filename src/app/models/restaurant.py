@@ -36,6 +36,12 @@ class RestaurantTag(str, enum.Enum):
     HOSTEL = "hostel"
 
 
+class RestaurantServiceOption(str, enum.Enum):
+    DINE_IN = "dine_in"
+    TAKEAWAY = "takeaway"
+    DELIVERY = "delivery"
+
+
 class Restaurant(Base):
     """
     Restaurant model: any place serving food that is fully vegan or has at
@@ -60,6 +66,9 @@ class Restaurant(Base):
     # Required when vegan_status is VEGAN_OPTIONS
     vegan_options_details = Column(Text, nullable=True)
     tags = Column(ARRAY(String), nullable=False, server_default="{}")
+    # How to eat there (dine in, takeaway, delivery); empty = unknown
+    service_options = Column(ARRAY(String), nullable=False,
+                             server_default="{}")
     # Extra cost of plant milk in euros: 0 = no surcharge, < 0 = cow milk
     # costs more, null = unknown
     plant_milk_surcharge = Column(Numeric(5, 2), nullable=True)
