@@ -196,6 +196,35 @@ class RestaurantPhotoStatusUpdate(BaseModel):
     status: RestaurantPhotoStatus
 
 
+class RestaurantBriefOut(BaseModel):
+    id: int
+    name: str
+    city: Optional[str] = None
+    vegan_status: str
+    validated: bool
+
+
+class RestaurantPhotoWithRestaurantOut(RestaurantPhotoOut):
+    restaurant: RestaurantBriefOut
+
+
+class RestaurantPhotoOutPaginated(BaseModel):
+    items: list[RestaurantPhotoWithRestaurantOut]
+    total: int
+    page: int
+    size: int
+    pages: int
+
+
+class RestaurantPhotoFilters(BaseModel):
+    """Filters for restaurant place and menu photos search."""
+    restaurant_id: Optional[int] = None
+    restaurant___name__contains: Optional[str] = None
+    kind: Optional[str] = None
+    status: Optional[str] = None
+    user_id: Optional[int] = None
+
+
 class RestaurantOut(BaseModel):
     id: int
     name: str

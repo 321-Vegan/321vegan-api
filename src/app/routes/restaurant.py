@@ -27,6 +27,8 @@ from app.schemas.restaurant import (
     RestaurantFilters,
     RestaurantEditOut,
     RestaurantPhotoOut,
+    RestaurantPhotoOutPaginated,
+    RestaurantPhotoFilters,
     RestaurantPhotoStatusUpdate,
 )
 
@@ -177,7 +179,7 @@ def fetch_paginated_restaurants(
     Returns:
         RestaurantOutPaginated: The list of restaurants with pagination data.
     """
-    page, size = pagination_params
+    skip, size = pagination_params
     sortby, descending = orderby_params
     filters = filter_params.model_dump(exclude_none=True)
     parsed_tags = _parse_tags(tags)
@@ -185,7 +187,7 @@ def fetch_paginated_restaurants(
         filters['tags__overlap'] = parsed_tags
     restaurants, total = restaurant_crud.get_many(
         db,
-        skip=page,
+        skip=skip,
         limit=size,
         order_by=sortby,
         descending=descending,
@@ -195,7 +197,7 @@ def fetch_paginated_restaurants(
     return {
         "items": restaurants,
         "total": total,
-        "page": page,
+        "page": skip // size + 1,
         "size": size,
         "pages": pages
     }
@@ -226,6 +228,57 @@ def fetch_nearby_restaurants(
     restaurants = restaurant_crud.find_all_nearby(
         db, latitude, longitude, radius)
     return [_map_out(restaurant) for restaurant in restaurants]
+
+
+@router.get(
+    "/photos/search",
+    response_model=RestaurantPhotoOutPaginated,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(RoleChecker(["contributor", "admin"]))],
+)
+def fetch_paginated_photos(
+    filter_params: RestaurantPhotoFilters = Depends(),
+    db: Session = Depends(get_db),
+    pagination_params: Tuple[int, int] = Depends(get_pagination_params),
+    orderby_params: Tuple[str, bool] = Depends(get_sort_by_params),
+) -> RestaurantPhotoOutPaginated:
+    """
+    Search the place and menu photos of validated restaurants, e.g. the
+    pending ones to moderate (moderators only). Review photos follow their
+    review, and the photos of a pending restaurant are approved with it, so
+    both are left out.
+
+    Parameters:
+        filter_params (RestaurantPhotoFilters): Filter parameters.
+        db (Session): The database session.
+        pagination_params (Tuple[int, int]): The pagination parameters (skip, limit).
+        orderby_params (Tuple[str, bool]): The order by parameters (sortby, descending).
+
+    Returns:
+        RestaurantPhotoOutPaginated: The photos with their restaurant.
+    """
+    skip, size = pagination_params
+    sortby, descending = orderby_params
+    filters = filter_params.model_dump(exclude_none=True)
+    filters['review_id__isnull'] = True
+    filters['restaurant___validated'] = True
+    filters['restaurant___date_deleted__isnull'] = True
+    photos, total = restaurant_photo_crud.get_many(
+        db,
+        skip=skip,
+        limit=size,
+        order_by=sortby,
+        descending=descending,
+        **filters
+    )
+    pages = (total + size - 1) // size
+    return {
+        "items": photos,
+        "total": total,
+        "page": skip // size + 1,
+        "size": size,
+        "pages": pages,
+    }
 
 
 @router.patch(
