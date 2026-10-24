@@ -7,7 +7,7 @@ from app.models.shop import Shop
 from app.models.scan_event import ScanEvent
 from app.models.product_not_found_report import ProductNotFoundReport
 from app.models.product_found_report import ProductFoundReport
-import math
+from app.geo import haversine_distance, bounding_box_deltas
 
 
 class ShopCRUDRepository(CRUDRepository):
@@ -129,14 +129,8 @@ class ShopCRUDRepository(CRUDRepository):
         Returns:
             Optional[Shop]: The nearest shop within radius, or None.
         """
-        # Calculate distance using Haversine formula
-        # https://en.wikipedia.org/wiki/Haversine_formula
-        earth_radius = 6371000
-        
-        # Convert radius to degrees (approximate)
-        lat_range = radius_meters / 111320 
-        lon_range = radius_meters / (111320 * func.cos(func.radians(latitude)))
-        
+        lat_range, lon_range = bounding_box_deltas(latitude, radius_meters)
+
         # Find shops in the bounding box first (faster)
         shops = db.query(self._model).filter(
             self._model.latitude.between(latitude - lat_range, latitude + lat_range),
@@ -146,15 +140,9 @@ class ShopCRUDRepository(CRUDRepository):
 
         # Calculate exact distance
         for shop in shops:
-            a = (math.sin(math.radians(shop.latitude - latitude) / 2) ** 2 +
-                 math.cos(math.radians(latitude)) * math.cos(math.radians(shop.latitude)) *
-                 math.sin(math.radians(shop.longitude - longitude) / 2) ** 2)
-            c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-            distance = earth_radius * c
-            
-            if distance <= radius_meters:
+            if haversine_distance(latitude, longitude, shop.latitude, shop.longitude) <= radius_meters:
                 return shop
-        
+
         return None
     
     def find_all_nearby(
@@ -176,10 +164,7 @@ class ShopCRUDRepository(CRUDRepository):
         Returns:
             List[Shop]: Shops within radius sorted by distance.
         """
-        earth_radius = 6371000
-
-        lat_range = radius_meters / 111320
-        lon_range = radius_meters / (111320 * func.cos(func.radians(latitude)))
+        lat_range, lon_range = bounding_box_deltas(latitude, radius_meters)
 
         shops = db.query(self._model).filter(
             self._model.latitude.between(latitude - lat_range, latitude + lat_range),
@@ -189,11 +174,8 @@ class ShopCRUDRepository(CRUDRepository):
 
         shops_with_distance = []
         for shop in shops:
-            a = (math.sin(math.radians(shop.latitude - latitude) / 2) ** 2 +
-                 math.cos(math.radians(latitude)) * math.cos(math.radians(shop.latitude)) *
-                 math.sin(math.radians(shop.longitude - longitude) / 2) ** 2)
-            c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-            distance = earth_radius * c
+            distance = haversine_distance(
+                latitude, longitude, shop.latitude, shop.longitude)
 
             if distance <= radius_meters:
                 shops_with_distance.append((distance, shop))

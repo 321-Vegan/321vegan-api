@@ -22,6 +22,7 @@ OPERATOR_MAPPING = {
     'notin': operators.notin_op,
     'between': lambda c, v: c.between(v[0], v[1]),
     'any': lambda c, v:  v == any_(c),  # at least v is in c
+    'overlap': lambda c, v: c.overlap(v),  # c and v share at least one item
 
     'like': operators.like_op,
     'ilike': operators.ilike_op,

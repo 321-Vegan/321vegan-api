@@ -58,6 +58,9 @@ class User(Base):
         "B12Intake", back_populates="user",
         cascade="all, delete",
         passive_deletes=True,)
+    restaurants = relationship("Restaurant", back_populates="user")
+    restaurant_reviews = relationship(
+        "RestaurantReview", back_populates="user")
 
     def _count(self, model, relationship_attr) -> int:
         """Count the user's rows of a relationship without loading them"""

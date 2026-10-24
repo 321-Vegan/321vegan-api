@@ -20,3 +20,8 @@ from app.models.product_found_report import ProductFoundReport
 from app.models.shop_review import ShopReview, ShopReviewStatus
 from app.models.product_review import ProductReview, ProductReviewStatus
 from app.models.b12_intake import B12Intake, B12IntakeFrequency
+from app.models.restaurant import Restaurant, RestaurantVeganStatus, RestaurantOperatingStatus, RestaurantTag
+from app.models.restaurant_photo import RestaurantPhoto, RestaurantPhotoKind, RestaurantPhotoStatus
+from app.models.restaurant_review import RestaurantReview, RestaurantReviewStatus
+from app.models.restaurant_edit_suggestion import RestaurantEditSuggestion, RestaurantEditSuggestionKind, RestaurantEditSuggestionStatus
+from app.models.restaurant_edit import RestaurantEdit
