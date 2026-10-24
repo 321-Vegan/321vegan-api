@@ -212,6 +212,47 @@ def fetch_paginated_restaurants(
 
 
 @router.get(
+    "/mine",
+    response_model=RestaurantOutPaginated,
+    status_code=status.HTTP_200_OK,
+)
+def fetch_my_restaurants(
+    db: Session = Depends(get_db),
+    pagination_params: Tuple[int, int] = Depends(get_pagination_params),
+    current_user: User = Depends(get_current_active_user),
+) -> RestaurantOutPaginated:
+    """
+    Fetch the restaurants created by the current user (pending or
+    validated), newest first.
+
+    Parameters:
+        db (Session): The database session.
+        pagination_params (Tuple[int, int]): The pagination parameters (skip, limit).
+        current_user (User): The current authenticated user.
+
+    Returns:
+        RestaurantOutPaginated: The user's restaurants with pagination data.
+    """
+    skip, size = pagination_params
+    restaurants, total = restaurant_crud.get_many(
+        db,
+        skip=skip,
+        limit=size,
+        order_by="created_at",
+        descending=True,
+        filters={"created_by": current_user.id},
+    )
+    pages = (total + size - 1) // size
+    return {
+        "items": [_restaurant_out(restaurant, current_user) for restaurant in restaurants],
+        "total": total,
+        "page": skip // size + 1,
+        "size": size,
+        "pages": pages,
+    }
+
+
+@router.get(
     "/nearby", response_model=List[RestaurantMapOut], status_code=status.HTTP_200_OK
 )
 def fetch_nearby_restaurants(
