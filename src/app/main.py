@@ -44,6 +44,7 @@ from app.routes import (
     product_review_router,
     b12_intake_router,
     restaurant_router,
+    restaurant_review_router,
 )
 from app.log import get_logger
 
@@ -126,6 +127,7 @@ app.include_router(shop_review_router, prefix="/shop-reviews", tags=["shop_revie
 app.include_router(product_review_router, prefix="/product-reviews", tags=["product_review"])
 app.include_router(b12_intake_router, prefix="/b12-intakes", tags=["b12_intake"])
 app.include_router(restaurant_router, prefix="/restaurants", tags=["restaurant"])
+app.include_router(restaurant_review_router, prefix="/restaurant-reviews", tags=["restaurant_review"])
 
 # Serve static files
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")

@@ -33,6 +33,19 @@ class CRUDRepository:
         self._model = model
         self._name = model.__name__
 
+    def _query(self, db: Session):
+        """
+        Base query used by list operations (get_all, get_many).
+        Override in subclasses to add loader options (eager loading).
+
+        Parameters:
+            db (Session): The database session.
+
+        Returns:
+            Query: The base query for the model.
+        """
+        return db.query(self._model)
+
     def count(self, db: Session, *args, **kwargs) -> int:
         """
         Retrieves total records from the database.
@@ -153,7 +166,7 @@ class CRUDRepository:
             "retrieving all records for %s",
             self._model.__name__
         )
-        return db.query(self._model).all()
+        return self._query(db).all()
 
     def get_many(
         self, db: Session, *args, skip: int = 0, limit: int = 100, order_by: str = 'created_at', descending: bool = False, **kwargs
@@ -185,7 +198,7 @@ class CRUDRepository:
             limit,
         )
 
-        query = db.query(self._model)
+        query = self._query(db)
 
         # filters
         query = buildQueryFilters(self._model, query, kwargs)
