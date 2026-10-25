@@ -6,6 +6,8 @@ from app.schemas.restaurant import RestaurantBase, RestaurantPhotoOut
 
 # Field of `changes` listing the photos proposed for removal
 REMOVE_PHOTO_IDS = "remove_photo_ids"
+# Field of `changes` holding the photo proposed as the featured one
+FEATURED_PHOTO_ID = "featured_photo_id"
 
 
 class RestaurantSuggestionCreate(BaseModel):
@@ -15,6 +17,8 @@ class RestaurantSuggestionCreate(BaseModel):
     changes: Dict[str, Any] = {}
     # Outdated place or menu photos to remove (EDIT only)
     remove_photo_ids: List[int] = []
+    # Approved place or menu photo to show first instead (EDIT only)
+    featured_photo_id: Optional[int] = None
     # The restaurant this one duplicates (DUPLICATE only)
     duplicate_of_id: Optional[int] = None
     comment: Optional[str] = Field(None, max_length=2000)
@@ -26,9 +30,13 @@ class RestaurantSuggestionCreate(BaseModel):
             raise ValueError(
                 f"These fields can't be changed: {', '.join(sorted(unknown))}")
         if self.kind == RestaurantEditSuggestionKind.EDIT:
-            if not self.changes and not self.remove_photo_ids:
-                raise ValueError("An edit needs changes or photos to remove")
-        elif self.changes or self.remove_photo_ids:
+            if not self.changes and not self.remove_photo_ids \
+                    and self.featured_photo_id is None:
+                raise ValueError(
+                    "An edit needs changes, photos to remove or a featured photo")
+            if self.featured_photo_id in self.remove_photo_ids:
+                raise ValueError("The featured photo can't be removed")
+        elif self.changes or self.remove_photo_ids or self.featured_photo_id is not None:
             raise ValueError("Only an edit carries changes")
         if (self.kind == RestaurantEditSuggestionKind.DUPLICATE) != (self.duplicate_of_id is not None):
             raise ValueError(
@@ -77,6 +85,10 @@ class RestaurantSuggestionOut(BaseModel):
     current_values: Optional[Dict[str, Any]] = None
     # The photos proposed for removal that still exist
     photos_to_remove: List[RestaurantPhotoOut] = []
+    # The photo proposed as the featured one, if it still exists, and the
+    # featured one now
+    proposed_featured_photo: Optional[RestaurantPhotoOut] = None
+    current_featured_photo: Optional[RestaurantPhotoOut] = None
     comment: Optional[str] = None
     status: str
     applied_changes: Optional[Dict[str, Any]] = None

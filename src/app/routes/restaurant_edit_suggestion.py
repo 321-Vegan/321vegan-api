@@ -24,6 +24,7 @@ from app.models.restaurant_edit_suggestion import (
 from app.services.s3_file_manager import s3_file_manager
 from app.schemas.restaurant import RestaurantBase, RestaurantPhotoOut, compute_restaurant_change, restaurant_state
 from app.schemas.restaurant_edit_suggestion import (
+    FEATURED_PHOTO_ID,
     REMOVE_PHOTO_IDS,
     RestaurantSuggestionCreate,
     RestaurantSuggestionApply,
@@ -72,6 +73,12 @@ def _removable_photos(db: Session, restaurant_id: int, photo_ids) -> list:
     ).all()
 
 
+def _featured_photo_id(restaurant: Optional[Restaurant]) -> Optional[int]:
+    """The ID of the photo the restaurant shows first now, if any."""
+    featured = restaurant.featured_photo if restaurant is not None else None
+    return featured.id if featured else None
+
+
 def _current_values(db: Session, suggestion: RestaurantEditSuggestion) -> Optional[dict]:
     """Current values of the fields an edit changes, to spot conflicts."""
     if not suggestion.changes or suggestion.restaurant is None:
@@ -82,7 +89,10 @@ def _current_values(db: Session, suggestion: RestaurantEditSuggestion) -> Option
     except ValidationError:
         current = jsonable_encoder(state)
     values = {field: current.get(field)
-              for field in suggestion.changes if field != REMOVE_PHOTO_IDS}
+              for field in suggestion.changes
+              if field not in (REMOVE_PHOTO_IDS, FEATURED_PHOTO_ID)}
+    if FEATURED_PHOTO_ID in suggestion.changes:
+        values[FEATURED_PHOTO_ID] = _featured_photo_id(suggestion.restaurant)
     if REMOVE_PHOTO_IDS in suggestion.changes:
         values[REMOVE_PHOTO_IDS] = [
             photo.id for photo in _removable_photos(
@@ -92,12 +102,22 @@ def _current_values(db: Session, suggestion: RestaurantEditSuggestion) -> Option
 
 
 def _out(db: Session, suggestion: RestaurantEditSuggestion) -> RestaurantSuggestionOut:
+    changes = suggestion.changes or {}
     photos = _removable_photos(
-        db, suggestion.restaurant_id, (suggestion.changes or {}).get(REMOVE_PHOTO_IDS))
-    return RestaurantSuggestionOut.model_validate(suggestion).model_copy(update={
+        db, suggestion.restaurant_id, changes.get(REMOVE_PHOTO_IDS))
+    update = {
         "current_values": _current_values(db, suggestion),
         "photos_to_remove": [RestaurantPhotoOut.model_validate(photo) for photo in photos],
-    })
+    }
+    if FEATURED_PHOTO_ID in changes:
+        proposed = _removable_photos(
+            db, suggestion.restaurant_id, [changes[FEATURED_PHOTO_ID]])
+        current = suggestion.restaurant.featured_photo if suggestion.restaurant else None
+        update["proposed_featured_photo"] = \
+            RestaurantPhotoOut.model_validate(proposed[0]) if proposed else None
+        update["current_featured_photo"] = \
+            RestaurantPhotoOut.model_validate(current) if current else None
+    return RestaurantSuggestionOut.model_validate(suggestion).model_copy(update=update)
 
 
 def _get_suggestion(db: Session, id: int, user: User) -> RestaurantEditSuggestion:
@@ -270,6 +290,18 @@ def create_suggestion(
             photo_ids = sorted(photo.id for photo in photos)
             changes[REMOVE_PHOTO_IDS] = photo_ids
             base_values[REMOVE_PHOTO_IDS] = photo_ids
+        featured_id = suggestion_in.featured_photo_id
+        if featured_id is not None:
+            if not _removable_photos(db, restaurant.id, [featured_id]):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Only an approved place or menu photo of the restaurant can be featured",
+                )
+            # Already the one shown first: nothing to change
+            current_id = _featured_photo_id(restaurant)
+            if featured_id != current_id:
+                changes[FEATURED_PHOTO_ID] = featured_id
+                base_values[FEATURED_PHOTO_ID] = current_id
         if not changes:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -367,7 +399,7 @@ def apply_suggestion(
             )
         field_changes = {
             field: apply_in.values.get(field, proposed[field])
-            for field in fields if field != REMOVE_PHOTO_IDS
+            for field in fields if field not in (REMOVE_PHOTO_IDS, FEATURED_PHOTO_ID)
         }
         try:
             values, before, after = compute_restaurant_change(restaurant, field_changes)
@@ -375,11 +407,27 @@ def apply_suggestion(
             raise _validation_error(e)
         photos = _removable_photos(db, restaurant.id, proposed.get(REMOVE_PHOTO_IDS)) \
             if REMOVE_PHOTO_IDS in fields else []
-        if not values and not photos:
+        featured = None
+        if FEATURED_PHOTO_ID in fields:
+            candidates = _removable_photos(db, restaurant.id, [proposed[FEATURED_PHOTO_ID]])
+            # Gone, or removed by this very suggestion: nothing to feature
+            if candidates and candidates[0] not in photos:
+                featured = candidates[0]
+        if not values and not photos and featured is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Nothing left to apply: these are already the restaurant's values",
             )
+        if featured is not None:
+            before[FEATURED_PHOTO_ID] = _featured_photo_id(restaurant)
+            after[FEATURED_PHOTO_ID] = featured.id
+            db.query(RestaurantPhoto).filter(
+                RestaurantPhoto.restaurant_id == restaurant.id,
+                RestaurantPhoto.is_featured.is_(True),
+            ).update({"is_featured": False})
+            # Unique index: the previous one must be cleared first
+            db.flush()
+            featured.is_featured = True
         if photos:
             before["removed_photos"] = sorted(photo.path for photo in photos)
             after["removed_photos"] = []
