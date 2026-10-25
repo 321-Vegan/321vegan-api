@@ -31,6 +31,7 @@ class RestaurantTag(str, enum.Enum):
     ICE_CREAM = "ice_cream"
     BAR = "bar"
     CATERER = "caterer"
+    GROCERY = "grocery"
     HOTEL = "hotel"
     GUESTHOUSE = "guesthouse"
     HOSTEL = "hostel"
