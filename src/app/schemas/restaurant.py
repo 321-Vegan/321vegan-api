@@ -11,7 +11,8 @@ MAX_PLANT_MILK_SURCHARGE = 5
 CONTACT_FIELDS = ("phone", "website", "facebook", "instagram")
 TEXT_FIELDS = ("name", "address", "city", "country", "description",
                "vegan_options_details", "service_area", "opening_hours_note",
-               "phone", "website", "facebook", "instagram", "closure_note")
+               "phone", "website", "facebook", "instagram", "menu_url",
+               "closure_note")
 
 
 def _to_minutes(hhmm: str) -> int:
@@ -78,6 +79,7 @@ class RestaurantBase(BaseModel):
     website: Optional[str] = Field(None, max_length=500)
     facebook: Optional[str] = Field(None, max_length=500)
     instagram: Optional[str] = Field(None, max_length=500)
+    menu_url: Optional[str] = Field(None, max_length=500)
     operating_status: RestaurantOperatingStatus = RestaurantOperatingStatus.OPEN
     closed_from: Optional[date] = None
     closed_until: Optional[date] = None
@@ -210,6 +212,7 @@ class RestaurantUpdate(BaseModel):
     website: Optional[str] = None
     facebook: Optional[str] = None
     instagram: Optional[str] = None
+    menu_url: Optional[str] = None
     operating_status: Optional[RestaurantOperatingStatus] = None
     closed_from: Optional[date] = None
     closed_until: Optional[date] = None
@@ -291,6 +294,7 @@ class RestaurantOut(BaseModel):
     website: Optional[str] = None
     facebook: Optional[str] = None
     instagram: Optional[str] = None
+    menu_url: Optional[str] = None
     operating_status: str
     closed_from: Optional[date] = None
     closed_until: Optional[date] = None

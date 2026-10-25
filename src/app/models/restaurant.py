@@ -85,6 +85,8 @@ class Restaurant(Base):
     website = Column(String, nullable=True)
     facebook = Column(String, nullable=True)
     instagram = Column(String, nullable=True)
+    # Online menu (web page or PDF), when the place has one
+    menu_url = Column(String, nullable=True)
     operating_status = Column(Enum(RestaurantOperatingStatus), nullable=False,
                               default=RestaurantOperatingStatus.OPEN,
                               server_default=RestaurantOperatingStatus.OPEN.value,
