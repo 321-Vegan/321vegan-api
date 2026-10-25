@@ -164,7 +164,8 @@ class RestaurantCRUDRepository(CRUDRepository):
         """
         Get the restaurants to show on the map within a bounding box, with
         their approved reviews stats: validated ones, plus the pending ones
-        created by the user. Permanently closed ones are left out.
+        created by the user. Permanently closed ones are kept, so the app can
+        show users they closed.
 
         Parameters:
             db (Session): The database session.
@@ -201,7 +202,6 @@ class RestaurantCRUDRepository(CRUDRepository):
             self._model.latitude.between(min_lat, max_lat),
             self._model.longitude.between(min_lng, max_lng),
             self._model.date_deleted.is_(None),
-            self._model.operating_status != RestaurantOperatingStatus.PERMANENTLY_CLOSED,
             or_(self._model.validated.is_(True),
                 self._model.created_by == user_id),
         )
@@ -212,6 +212,54 @@ class RestaurantCRUDRepository(CRUDRepository):
                 self._model.vegan_status == RestaurantVeganStatus.FULLY_VEGAN,
             ))
         return query.limit(limit).all()
+
+    def search_by_name(
+        self,
+        db: Session,
+        query_text: str,
+        user_id: int,
+        latitude: Optional[float] = None,
+        longitude: Optional[float] = None,
+        limit: int = 10
+    ) -> List[Restaurant]:
+        """
+        Find the restaurants whose name contains a text, to suggest them in
+        the map search: validated ones, plus the pending ones created by the
+        user. Permanently closed ones are kept, so users learn they closed,
+        but come last. Then names starting with the text come first, then
+        the closest to the given point.
+
+        Parameters:
+            db (Session): The database session.
+            query_text (str): The text to look for (case-insensitive).
+            user_id (int): The current user ID.
+            latitude (Optional[float]): The point to sort by distance from.
+            longitude (Optional[float]): The point to sort by distance from.
+            limit (int): Maximum number of restaurants to return (default 10).
+
+        Returns:
+            List[Restaurant]: The matching restaurants.
+        """
+        pattern = query_text.strip().replace(
+            '\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+        starts_with = self._model.name.ilike(f"{pattern}%", escape='\\')
+        query = db.query(self._model).options(
+            noload(self._model.photos)
+        ).filter(
+            self._model.name.ilike(f"%{pattern}%", escape='\\'),
+            self._model.date_deleted.is_(None),
+            or_(self._model.validated.is_(True),
+                self._model.created_by == user_id),
+        )
+        is_closed = self._model.operating_status == RestaurantOperatingStatus.PERMANENTLY_CLOSED
+        order = [is_closed.asc(), starts_with.desc()]
+        if latitude is not None and longitude is not None:
+            # Squared degrees are enough to rank by proximity
+            order.append(
+                func.pow(self._model.latitude - latitude, 2)
+                + func.pow(self._model.longitude - longitude, 2))
+        order.append(self._model.name)
+        return query.order_by(*order).limit(limit).all()
 
     def find_all_nearby(
         self,

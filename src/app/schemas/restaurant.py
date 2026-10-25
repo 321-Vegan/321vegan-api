@@ -318,6 +318,8 @@ class RestaurantMapOut(BaseModel):
     name: str
     latitude: float
     longitude: float
+    # Shown under the name in the map search suggestions
+    city: Optional[str] = None
     vegan_status: str
     tags: List[str]
     service_options: List[str] = []

@@ -135,7 +135,7 @@ def fetch_restaurants_in_area(
     """
     Fetch the restaurants to show on the map within a bounding box: validated
     ones, plus the pending ones created by the user. Permanently closed
-    restaurants are left out.
+    restaurants are kept so the app can show them as closed.
 
     Parameters:
         min_lat/max_lat/min_lng/max_lng (float): The bounding box.
@@ -287,6 +287,37 @@ def fetch_nearby_restaurants(
     """
     restaurants = restaurant_crud.find_all_nearby(
         db, latitude, longitude, radius)
+    return [_map_out(restaurant) for restaurant in restaurants]
+
+
+@router.get(
+    "/search-name", response_model=List[RestaurantMapOut], status_code=status.HTTP_200_OK
+)
+def search_restaurants_by_name(
+    q: str = Query(..., min_length=2, max_length=100),
+    latitude: Optional[float] = Query(default=None, ge=-90, le=90),
+    longitude: Optional[float] = Query(default=None, ge=-180, le=180),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> List[RestaurantMapOut]:
+    """
+    Search restaurants by name for the map search suggestions: validated
+    ones, plus the pending ones created by the user. Permanently closed
+    restaurants are kept (last) so the app can show them as closed.
+
+    Parameters:
+        q (str): The text the name must contain (case-insensitive).
+        latitude (float): The point to sort by distance from (map center).
+        longitude (float): The point to sort by distance from (map center).
+        db (Session): The database session.
+        current_user (User): The current authenticated user.
+
+    Returns:
+        List[RestaurantMapOut]: The matching restaurants (max 10): open
+            ones first, names starting with the text first, then the closest.
+    """
+    restaurants = restaurant_crud.search_by_name(
+        db, q, current_user.id, latitude, longitude)
     return [_map_out(restaurant) for restaurant in restaurants]
 
 
