@@ -80,6 +80,23 @@ class ProductOut(BaseModel):
         }
 
 
+class ProductEditOut(BaseModel):
+    """A product history entry: before is empty for the creation."""
+    id: int
+    product_id: int
+    user_id: Optional[int] = None
+    user_nickname: Optional[str] = None
+    before: dict
+    after: dict
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+        json_encoders = {
+            datetime: lambda v: v.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f%z"),
+        }
+
+
 class ProductOutPaginated(BaseModel):
     items: List[ProductOut]
     total: int

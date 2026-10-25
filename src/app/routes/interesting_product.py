@@ -290,7 +290,10 @@ def update_interesting_product(
                 **dict_interesting_product_update))
         for old_alternative_product in old_alternative_products:
             if old_alternative_product.id not in alternative_product_ids:
-                old_alternative_product.interesting_product_id = None
+                product_crud.update(
+                    db, old_alternative_product,
+                    ProductUpdate(ean=old_alternative_product.ean, interesting_product_id=None),
+                    active_user, increment_modified=False)
         for alternative_id in alternative_product_ids:
             product = product_crud.get_one(db, Product.id == alternative_id)
             if product is None:

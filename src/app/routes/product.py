@@ -11,7 +11,7 @@ from app.database.db import get_db
 from app.log import get_logger
 from app.models import Product, User
 from app.models.product import ProductState
-from app.schemas.product import ProductCreate, ProductOut, ProductUpdate, ProductOutPaginated, ProductOutCount, ProductFilters, ProductFile, ProductBrandAnswerFile
+from app.schemas.product import ProductCreate, ProductOut, ProductUpdate, ProductOutPaginated, ProductOutCount, ProductFilters, ProductFile, ProductBrandAnswerFile, ProductEditOut
 from app.services.s3_file_manager import s3_file_manager
 
 log = get_logger(__name__)
@@ -139,6 +139,37 @@ def fetch_product_by_id(
             detail=f"Product with id {id} not found",
         )
     return product
+
+
+@router.get(
+    "/{id}/history",
+    response_model=List[ProductEditOut],
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(RoleChecker(["contributor", "admin"]))]
+)
+def fetch_product_history(
+    id: int, db: Session = Depends(get_db)
+) -> List[ProductEditOut]:
+    """
+    Fetch the creation and the changes of a product, newest first
+    (contributor or admin only).
+
+    Parameters:
+        id (int): The ID of the product.
+        db (Session): The database session.
+
+    Returns:
+        List[ProductEditOut]: The product history.
+
+    Raises:
+        HTTPException: If the product is not found.
+    """
+    if product_crud.get_one(db, Product.id == id) is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Product with id {id} not found",
+        )
+    return product_crud.get_history(db, id)
 
 
 @router.get("/ean/{ean}", response_model=ProductOut, status_code=status.HTTP_200_OK, dependencies=[Depends(get_current_active_user_or_client)])
