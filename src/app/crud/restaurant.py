@@ -10,6 +10,7 @@ from app.models.restaurant import Restaurant, RestaurantOperatingStatus, Restaur
 from app.models.restaurant_edit import RestaurantEdit
 from app.models.restaurant_photo import RestaurantPhoto, RestaurantPhotoKind, RestaurantPhotoStatus, pick_featured_photo
 from app.models.restaurant_review import RestaurantReview, RestaurantReviewStatus
+from app.models.restaurant_save import RestaurantSave
 
 
 class RestaurantCRUDRepository(CRUDRepository):
@@ -393,5 +394,95 @@ class RestaurantPhotoCRUDRepository(CRUDRepository):
         ).scalar() or 0
 
 
+class RestaurantSaveCRUDRepository(CRUDRepository):
+    def get_saved_ids(self, db: Session, user_id: int, restaurant_ids: List[int]) -> set:
+        """
+        Get which of some restaurants the user saved.
+
+        Parameters:
+            db (Session): The database session.
+            user_id (int): The user ID.
+            restaurant_ids (List[int]): The restaurant IDs.
+
+        Returns:
+            set: The IDs of the saved ones.
+        """
+        if not restaurant_ids:
+            return set()
+        rows = db.query(self._model.restaurant_id).filter(
+            self._model.user_id == user_id,
+            self._model.restaurant_id.in_(restaurant_ids),
+        ).all()
+        return {restaurant_id for restaurant_id, in rows}
+
+    def save(self, db: Session, user_id: int, restaurant_id: int) -> None:
+        """
+        Save a restaurant for the user; nothing to do when already saved.
+
+        Parameters:
+            db (Session): The database session.
+            user_id (int): The user ID.
+            restaurant_id (int): The restaurant ID.
+        """
+        exists = db.query(self._model.id).filter(
+            self._model.user_id == user_id,
+            self._model.restaurant_id == restaurant_id,
+        ).first()
+        if exists:
+            return
+        db.add(self._model(user_id=user_id, restaurant_id=restaurant_id))
+        db.commit()
+
+    def unsave(self, db: Session, user_id: int, restaurant_id: int) -> None:
+        """
+        Remove a restaurant from the user's saved ones, if there.
+
+        Parameters:
+            db (Session): The database session.
+            user_id (int): The user ID.
+            restaurant_id (int): The restaurant ID.
+        """
+        db.query(self._model).filter(
+            self._model.user_id == user_id,
+            self._model.restaurant_id == restaurant_id,
+        ).delete()
+        db.commit()
+
+    def get_saved_restaurants(
+        self,
+        db: Session,
+        user_id: int,
+        skip: int = 0,
+        limit: int = 20
+    ) -> Tuple[List[Restaurant], int]:
+        """
+        Get the restaurants saved by the user, last saved first: the ones
+        still visible to them (validated, or created by them). Permanently
+        closed ones are kept, so the user learns they closed.
+
+        Parameters:
+            db (Session): The database session.
+            user_id (int): The user ID.
+            skip (int): Number of records to skip.
+            limit (int): Maximum number of records to retrieve.
+
+        Returns:
+            Tuple[List[Restaurant], int]: The restaurants and total count.
+        """
+        query = db.query(Restaurant).join(
+            self._model, self._model.restaurant_id == Restaurant.id
+        ).filter(
+            self._model.user_id == user_id,
+            Restaurant.date_deleted.is_(None),
+            or_(Restaurant.validated.is_(True),
+                Restaurant.created_by == user_id),
+        )
+        total = query.count()
+        restaurants = query.order_by(
+            self._model.created_at.desc()).offset(skip).limit(limit).all()
+        return restaurants, total
+
+
 restaurant_crud = RestaurantCRUDRepository(model=Restaurant)
 restaurant_photo_crud = RestaurantPhotoCRUDRepository(model=RestaurantPhoto)
+restaurant_save_crud = RestaurantSaveCRUDRepository(model=RestaurantSave)

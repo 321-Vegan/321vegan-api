@@ -25,4 +25,5 @@ from app.models.restaurant_photo import RestaurantPhoto, RestaurantPhotoKind, Re
 from app.models.restaurant_review import RestaurantReview, RestaurantReviewStatus
 from app.models.restaurant_edit_suggestion import RestaurantEditSuggestion, RestaurantEditSuggestionKind, RestaurantEditSuggestionStatus
 from app.models.restaurant_edit import RestaurantEdit
+from app.models.restaurant_save import RestaurantSave
 from app.models.product_edit import ProductEdit

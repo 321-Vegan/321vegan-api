@@ -304,6 +304,8 @@ class RestaurantOut(BaseModel):
     # Approved photo shown first on the restaurant page
     featured_photo: Optional[RestaurantPhotoOut] = None
     photos: List[RestaurantPhotoOut] = []
+    # Saved by the current user
+    is_saved: bool = False
 
     class Config:
         from_attributes = True

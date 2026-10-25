@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.routes.dependencies import get_current_active_user, get_pagination_params, get_sort_by_params, RoleChecker
-from app.crud.restaurant import restaurant_crud, restaurant_photo_crud
+from app.crud.restaurant import restaurant_crud, restaurant_photo_crud, restaurant_save_crud
 from app.database.db import get_db
 from app.log import get_logger
 from app.models import User
@@ -81,12 +81,24 @@ def _get_visible_restaurant(db: Session, id: int, user: User) -> Restaurant:
     return restaurant
 
 
-def _restaurant_out(restaurant: Restaurant, user: User) -> RestaurantOut:
+def _restaurant_out(
+    restaurant: Restaurant,
+    user: User,
+    db: Session,
+    saved_ids: Optional[set] = None,
+) -> RestaurantOut:
     """
     Restaurant as seen by the user: approved place and menu photos plus the
-    user's own pending ones (all of them for moderators), and no address for
-    a caterer without storefront.
+    user's own pending ones (all of them for moderators), no address for a
+    caterer without storefront, and whether the user saved it.
+
+    Parameters:
+        saved_ids (Optional[set]): The restaurants saved by the user, when
+            already known (lists); looked up otherwise.
     """
+    if saved_ids is None:
+        saved_ids = restaurant_save_crud.get_saved_ids(
+            db, user.id, [restaurant.id])
     out = RestaurantOut.model_validate(restaurant)
     is_moderator = _is_moderator(user)
     is_creator = restaurant.created_by == user.id
@@ -98,7 +110,7 @@ def _restaurant_out(restaurant: Restaurant, user: User) -> RestaurantOut:
             or photo.user_id == user.id
         )
     ]
-    update = {"photos": photos}
+    update = {"photos": photos, "is_saved": restaurant.id in saved_ids}
     if not restaurant.has_storefront and not (is_moderator or is_creator):
         update["address"] = None
     return out.model_copy(update=update)
@@ -253,14 +265,90 @@ def fetch_my_restaurants(
         descending=True,
         filters={"created_by": current_user.id},
     )
+    saved_ids = restaurant_save_crud.get_saved_ids(
+        db, current_user.id, [restaurant.id for restaurant in restaurants])
     pages = (total + size - 1) // size
     return {
-        "items": [_restaurant_out(restaurant, current_user) for restaurant in restaurants],
+        "items": [_restaurant_out(restaurant, current_user, db, saved_ids)
+                  for restaurant in restaurants],
         "total": total,
         "page": skip // size + 1,
         "size": size,
         "pages": pages,
     }
+
+
+@router.get(
+    "/saved",
+    response_model=RestaurantOutPaginated,
+    status_code=status.HTTP_200_OK,
+)
+def fetch_saved_restaurants(
+    db: Session = Depends(get_db),
+    pagination_params: Tuple[int, int] = Depends(get_pagination_params),
+    current_user: User = Depends(get_current_active_user),
+) -> RestaurantOutPaginated:
+    """
+    Fetch the restaurants saved by the current user, last saved first.
+    Permanently closed ones are kept so the user learns they closed.
+
+    Parameters:
+        db (Session): The database session.
+        pagination_params (Tuple[int, int]): The pagination parameters (skip, limit).
+        current_user (User): The current authenticated user.
+
+    Returns:
+        RestaurantOutPaginated: The saved restaurants with pagination data.
+    """
+    skip, size = pagination_params
+    restaurants, total = restaurant_save_crud.get_saved_restaurants(
+        db, current_user.id, skip=skip, limit=size)
+    saved_ids = {restaurant.id for restaurant in restaurants}
+    pages = (total + size - 1) // size
+    return {
+        "items": [_restaurant_out(restaurant, current_user, db, saved_ids)
+                  for restaurant in restaurants],
+        "total": total,
+        "page": skip // size + 1,
+        "size": size,
+        "pages": pages,
+    }
+
+
+@router.put("/{id}/saved", status_code=status.HTTP_204_NO_CONTENT)
+def save_restaurant(
+    id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> None:
+    """
+    Save a restaurant for the current user (no-op when already saved).
+
+    Parameters:
+        id (int): The ID of the restaurant.
+        db (Session): The database session.
+        current_user (User): The current authenticated user.
+    """
+    restaurant = _get_visible_restaurant(db, id, current_user)
+    restaurant_save_crud.save(db, current_user.id, restaurant.id)
+
+
+@router.delete("/{id}/saved", status_code=status.HTTP_204_NO_CONTENT)
+def unsave_restaurant(
+    id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> None:
+    """
+    Remove a restaurant from the current user's saved ones (no-op when not
+    saved). Works even if the restaurant is no longer visible.
+
+    Parameters:
+        id (int): The ID of the restaurant.
+        db (Session): The database session.
+        current_user (User): The current authenticated user.
+    """
+    restaurant_save_crud.unsave(db, current_user.id, id)
 
 
 @router.get(
@@ -456,7 +544,7 @@ def fetch_restaurant_by_id(
         RestaurantOut: The restaurant.
     """
     restaurant = _get_visible_restaurant(db, id, current_user)
-    return _restaurant_out(restaurant, current_user)
+    return _restaurant_out(restaurant, current_user, db)
 
 
 @router.post(
@@ -488,7 +576,7 @@ def create_restaurant(
     )
     log.info(
         f"Restaurant created: {restaurant.name} (ID: {restaurant.id}) by user {current_user.id}")
-    return _restaurant_out(restaurant, current_user)
+    return _restaurant_out(restaurant, current_user, db)
 
 
 @router.put(
@@ -545,13 +633,13 @@ def update_restaurant(
         after['validated'] = validated
 
     if not values:
-        return _restaurant_out(restaurant, current_user)
+        return _restaurant_out(restaurant, current_user, db)
 
     updated_restaurant = restaurant_crud.update_with_history(
         db, restaurant, values, before, after, user_id=current_user.id)
     log.info(
         f"Restaurant updated: {updated_restaurant.name} (ID: {id}) by user {current_user.id}, fields {list(values)}")
-    return _restaurant_out(updated_restaurant, current_user)
+    return _restaurant_out(updated_restaurant, current_user, db)
 
 
 @router.delete(
