@@ -351,6 +351,7 @@ class RestaurantEditOut(BaseModel):
     id: int
     restaurant_id: int
     user_id: Optional[int] = None
+    user_nickname: Optional[str] = None
     suggestion_id: Optional[int] = None
     before: dict
     after: dict
@@ -367,7 +368,9 @@ class RestaurantFilters(BaseModel):
     """Filters for restaurants search."""
     name: Optional[str] = None
     name__ilike: Optional[str] = None
+    name__lookalike: Optional[str] = None
     city: Optional[str] = None
+    city__lookalike: Optional[str] = None
     country: Optional[str] = None
     vegan_status: Optional[RestaurantVeganStatus] = None
     operating_status: Optional[RestaurantOperatingStatus] = None

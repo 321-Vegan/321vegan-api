@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Optional
 from sqlalchemy import Column, Integer, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
@@ -29,3 +30,7 @@ class RestaurantEdit(Base):
     restaurant = relationship("Restaurant")
     user = relationship("User")
     suggestion = relationship("RestaurantEditSuggestion")
+
+    @property
+    def user_nickname(self) -> Optional[str]:
+        return self.user.nickname if self.user else None
