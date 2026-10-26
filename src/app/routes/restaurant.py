@@ -563,8 +563,8 @@ def create_restaurant(
 ) -> RestaurantOut:
     """
     Create a new restaurant. Any authenticated user can submit one; it stays
-    pending until a moderator validates it. A restaurant created by a
-    moderator is validated right away.
+    pending until a moderator validates it. A restaurant created by an
+    admin is validated right away (contributors' ones are checked too).
 
     Parameters:
         restaurant_in (RestaurantCreate): The restaurant data.
@@ -578,7 +578,7 @@ def create_restaurant(
         db,
         restaurant_in.model_dump(),
         user_id=current_user.id,
-        validated=_is_moderator(current_user),
+        validated=current_user.has_role(UserRole.ADMIN),
     )
     log.info(
         f"Restaurant created: {restaurant.name} (ID: {restaurant.id}) by user {current_user.id}")
