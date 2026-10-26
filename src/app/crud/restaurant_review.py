@@ -2,7 +2,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.crud.base import CRUDRepository
 from app.models.restaurant_photo import RestaurantPhotoStatus
-from app.models.restaurant_review import RestaurantReview, RestaurantReviewStatus
+from app.models.restaurant_review import RestaurantPriceRange, RestaurantReview, RestaurantReviewStatus
 from app.schemas.restaurant_review import CRITERIA
 
 
@@ -29,8 +29,9 @@ class RestaurantReviewCRUDRepository(CRUDRepository):
 
     def get_restaurant_summary(self, db: Session, restaurant_id: int) -> dict:
         """
-        Get review count, average overall rating, its distribution and the
-        average of each detailed rating for a restaurant (approved reviews only).
+        Get review count, average overall rating, its distribution, the
+        average of each detailed rating and the price ranges (the most chosen
+        and their distribution) for a restaurant (approved reviews only).
 
         Parameters:
             db (Session): The database session.
@@ -38,7 +39,8 @@ class RestaurantReviewCRUDRepository(CRUDRepository):
 
         Returns:
             dict: { restaurant_id, review_count, comment_count, rating_avg,
-                    rating_distribution, criteria }
+                    rating_distribution, criteria, price_range,
+                    price_range_distribution }
         """
         approved = (
             self._model.restaurant_id == restaurant_id,
@@ -73,6 +75,23 @@ class RestaurantReviewCRUDRepository(CRUDRepository):
                 "rating_count": count or 0,
             }
 
+        price_rows = db.query(
+            self._model.price_range, func.count(self._model.id)
+        ).filter(*approved, self._model.price_range.isnot(None)).group_by(
+            self._model.price_range).all()
+        price_counts = dict(price_rows)
+        price_distribution = {
+            price_range.value: price_counts.get(price_range, 0)
+            for price_range in RestaurantPriceRange
+        }
+        # The most chosen; on a tie, the cheaper (ranges in price order)
+        most_chosen = max(
+            (price_range for price_range in RestaurantPriceRange
+             if price_counts.get(price_range)),
+            key=lambda price_range: price_counts[price_range],
+            default=None,
+        )
+
         return {
             "restaurant_id": restaurant_id,
             "review_count": review_count,
@@ -80,6 +99,8 @@ class RestaurantReviewCRUDRepository(CRUDRepository):
             "rating_avg": round(rating_sum / review_count, 1) if review_count else 0.0,
             "rating_distribution": distribution,
             "criteria": criteria,
+            "price_range": most_chosen.value if most_chosen else None,
+            "price_range_distribution": price_distribution,
         }
 
 

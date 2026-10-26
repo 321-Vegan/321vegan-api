@@ -13,10 +13,20 @@ class RestaurantReviewStatus(str, enum.Enum):
     REJECTED = "REJECTED"
 
 
+class RestaurantPriceRange(str, enum.Enum):
+    """What a meal (or a usual order) costs per person, in euros."""
+    UNDER_10 = "UNDER_10"
+    FROM_10_TO_20 = "FROM_10_TO_20"
+    FROM_20_TO_30 = "FROM_20_TO_30"
+    FROM_30_TO_50 = "FROM_30_TO_50"
+    OVER_50 = "OVER_50"
+
+
 class RestaurantReview(Base):
     """
     Review of a restaurant: an overall rating (`rating`, the one shown on the
-    map) and optional detailed ratings, all from 1 to 5.
+    map) and optional detailed ratings, all from 1 to 5, and optionally the
+    price paid per person.
     """
     __tablename__ = "restaurant_reviews"
     __table_args__ = (
@@ -49,6 +59,8 @@ class RestaurantReview(Base):
     rating_taste = Column(Integer, nullable=True)
     # Welcome / service
     rating_service = Column(Integer, nullable=True)
+    # Price per person; the restaurant shows the one most chosen
+    price_range = Column(Enum(RestaurantPriceRange), nullable=True)
     comment = Column(Text, nullable=True)
     status = Column(Enum(RestaurantReviewStatus), nullable=False,
                     default=RestaurantReviewStatus.PENDING, index=True)

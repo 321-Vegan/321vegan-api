@@ -22,7 +22,7 @@ from app.models.product_review import ProductReview, ProductReviewStatus
 from app.models.b12_intake import B12Intake, B12IntakeFrequency
 from app.models.restaurant import Restaurant, RestaurantVeganStatus, RestaurantOperatingStatus, RestaurantTag, RestaurantServiceOption
 from app.models.restaurant_photo import RestaurantPhoto, RestaurantPhotoKind, RestaurantPhotoStatus
-from app.models.restaurant_review import RestaurantReview, RestaurantReviewStatus
+from app.models.restaurant_review import RestaurantPriceRange, RestaurantReview, RestaurantReviewStatus
 from app.models.restaurant_edit_suggestion import RestaurantEditSuggestion, RestaurantEditSuggestionKind, RestaurantEditSuggestionStatus
 from app.models.restaurant_edit import RestaurantEdit
 from app.models.restaurant_save import RestaurantSave

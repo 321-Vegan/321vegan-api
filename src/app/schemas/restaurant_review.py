@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import Dict, List, Optional
 from datetime import datetime, timezone
-from app.models.restaurant_review import RestaurantReviewStatus
+from app.models.restaurant_review import RestaurantPriceRange, RestaurantReviewStatus
 from app.schemas.restaurant import RestaurantPhotoOut
 
 # Detailed ratings, by summary key
@@ -36,6 +36,8 @@ class RestaurantReviewCreate(BaseModel):
     rating_value: Optional[int] = Field(None, ge=1, le=5)
     rating_taste: Optional[int] = Field(None, ge=1, le=5)
     rating_service: Optional[int] = Field(None, ge=1, le=5)
+    # Price per person
+    price_range: Optional[RestaurantPriceRange] = None
     comment: Optional[str] = Field(None, max_length=2000)
     user_id: Optional[int] = None
     status: Optional[RestaurantReviewStatus] = None
@@ -47,6 +49,7 @@ class RestaurantReviewUpdate(BaseModel):
     rating_value: Optional[int] = Field(None, ge=1, le=5)
     rating_taste: Optional[int] = Field(None, ge=1, le=5)
     rating_service: Optional[int] = Field(None, ge=1, le=5)
+    price_range: Optional[RestaurantPriceRange] = None
     comment: Optional[str] = Field(None, max_length=2000)
 
 
@@ -67,6 +70,7 @@ class RestaurantReviewOut(BaseModel):
     rating_value: Optional[int] = None
     rating_taste: Optional[int] = None
     rating_service: Optional[int] = None
+    price_range: Optional[str] = None
     comment: Optional[str] = None
     status: str
     photos: List[RestaurantPhotoOut] = []
@@ -103,6 +107,11 @@ class RestaurantReviewSummaryOut(BaseModel):
     rating_distribution: Dict[str, int]
     # Detailed ratings, keyed by choice / value / taste / service
     criteria: Dict[str, CriterionSummaryOut]
+    # Price per person most chosen in the reviews (ties: the cheaper), null
+    # when no review gave one
+    price_range: Optional[str] = None
+    # Number of approved reviews per price range, e.g. {"UNDER_10": 2, ...}
+    price_range_distribution: Dict[str, int] = {}
 
 
 class RestaurantReviewOutCount(BaseModel):
