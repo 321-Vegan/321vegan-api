@@ -2,7 +2,7 @@ from collections import defaultdict
 from typing import Dict, Optional, List, Tuple
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session, noload
-from sqlalchemy import func, or_
+from sqlalchemy import and_, func, or_
 from app.crud.base import CRUDRepository
 from app.crud.filters import buildQueryFilters
 from app.geo import haversine_distance, bounding_box_deltas
@@ -203,8 +203,9 @@ class RestaurantCRUDRepository(CRUDRepository):
         """
         Get the restaurants to show on the map within a bounding box, with
         their approved reviews stats: validated ones, plus the pending ones
-        created by the user. Permanently closed ones are kept, so the app can
-        show users they closed.
+        created by the user. Food trucks are kept when any of their stops is
+        in the box. Permanently closed ones are kept, so the app can show
+        users they closed.
 
         Parameters:
             db (Session): The database session.
@@ -238,8 +239,18 @@ class RestaurantCRUDRepository(CRUDRepository):
         ).options(
             noload(self._model.photos)
         ).filter(
-            self._model.latitude.between(min_lat, max_lat),
-            self._model.longitude.between(min_lng, max_lng),
+            or_(
+                and_(self._model.latitude.between(min_lat, max_lat),
+                     self._model.longitude.between(min_lng, max_lng)),
+                and_(self._model.stops.isnot(None),
+                     func.jsonb_path_exists(
+                         self._model.stops,
+                         '$[*] ? (@.latitude >= $min_lat && @.latitude <= $max_lat'
+                         ' && @.longitude >= $min_lng && @.longitude <= $max_lng)',
+                         func.jsonb_build_object(
+                             'min_lat', min_lat, 'max_lat', max_lat,
+                             'min_lng', min_lng, 'max_lng', max_lng))),
+            ),
             self._model.date_deleted.is_(None),
             or_(self._model.validated.is_(True),
                 self._model.created_by == user_id),

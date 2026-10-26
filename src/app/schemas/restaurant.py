@@ -8,6 +8,7 @@ TIME_PATTERN = r"^([01]\d|2[0-3]):[0-5]\d$"
 MINUTES_PER_DAY = 24 * 60
 MINUTES_PER_WEEK = 7 * MINUTES_PER_DAY
 MAX_PLANT_MILK_SURCHARGE = 5
+MAX_STOPS = 14
 CONTACT_FIELDS = ("phone", "website", "facebook", "instagram")
 TEXT_FIELDS = ("name", "address", "city", "country", "description",
                "vegan_options_details", "service_area", "opening_hours_note",
@@ -51,6 +52,27 @@ def _check_no_overlap(slots: List[OpeningSlot]) -> None:
         raise ValueError("Opening slots overlap")
 
 
+class RestaurantStop(BaseModel):
+    """
+    A place a food truck goes back to every week. Empty opening_hours = its
+    days there vary (see opening_hours_note).
+    """
+    label: Optional[str] = Field(None, max_length=100)
+    address: Optional[str] = None
+    city: Optional[str] = None
+    latitude: float = Field(..., ge=-90, le=90)
+    longitude: float = Field(..., ge=-180, le=180)
+    opening_hours: List[OpeningSlot] = []
+
+    @field_validator("label", "address", "city", mode="before")
+    @classmethod
+    def strip_text(cls, value):
+        if isinstance(value, str):
+            value = value.strip()
+            return value or None
+        return value
+
+
 class RestaurantBase(BaseModel):
     """
     Full restaurant data, with the business rules. Used to create a
@@ -79,6 +101,8 @@ class RestaurantBase(BaseModel):
     service_area: Optional[str] = Field(None, max_length=200)
     opening_hours: Optional[List[OpeningSlot]] = None
     opening_hours_note: Optional[str] = Field(None, max_length=500)
+    # Food trucks only; the first stop is the restaurant's position
+    stops: Optional[List[RestaurantStop]] = Field(None, max_length=MAX_STOPS)
     phone: Optional[str] = Field(None, max_length=50)
     website: Optional[str] = Field(None, max_length=500)
     facebook: Optional[str] = Field(None, max_length=500)
@@ -144,6 +168,27 @@ class RestaurantBase(BaseModel):
             # (2 decimals is about 1 km)
             self.latitude = round(self.latitude, 2)
             self.longitude = round(self.longitude, 2)
+
+        if not self.stops:
+            self.stops = None
+        else:
+            if RestaurantTag.FOOD_TRUCK not in self.tags:
+                raise ValueError("Only a food truck can have stops")
+            if not self.has_storefront:
+                raise ValueError("A place without storefront can't have stops")
+            # The map, the duplicates check and older apps only know the
+            # restaurant's position and hours: keep them in sync. The truck
+            # can't be at two stops at once, so their slots can't overlap.
+            first = self.stops[0]
+            self.latitude = first.latitude
+            self.longitude = first.longitude
+            self.address = first.address
+            self.city = first.city or self.city
+            slots = [slot for stop in self.stops for slot in stop.opening_hours]
+            if slots:
+                _check_no_overlap(slots)
+            self.opening_hours = sorted(
+                slots, key=lambda slot: slot.week_interval()) or None
 
         if self.operating_status != RestaurantOperatingStatus.TEMPORARILY_CLOSED:
             if self.closed_from or self.closed_until:
@@ -219,6 +264,7 @@ class RestaurantUpdate(BaseModel):
     service_area: Optional[str] = None
     opening_hours: Optional[List[OpeningSlot]] = None
     opening_hours_note: Optional[str] = None
+    stops: Optional[List[RestaurantStop]] = None
     phone: Optional[str] = None
     website: Optional[str] = None
     facebook: Optional[str] = None
@@ -308,6 +354,7 @@ class RestaurantOut(BaseModel):
     service_area: Optional[str] = None
     opening_hours: Optional[List[OpeningSlot]] = None
     opening_hours_note: Optional[str] = None
+    stops: Optional[List[RestaurantStop]] = None
     phone: Optional[str] = None
     website: Optional[str] = None
     facebook: Optional[str] = None
@@ -356,6 +403,8 @@ class RestaurantMapOut(BaseModel):
     serves_hot_drinks: Optional[bool] = None
     # For the "open now" filter of the map
     opening_hours: Optional[List[OpeningSlot]] = None
+    # A pin per stop for food trucks
+    stops: Optional[List[RestaurantStop]] = None
     operating_status: str
     is_closed_now: bool
     validated: bool

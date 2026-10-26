@@ -1,7 +1,7 @@
 import enum
 from datetime import date
 from typing import Optional
-from sqlalchemy import Column, Integer, String, Float, Boolean, Date, DateTime, Numeric, Text, Enum, ForeignKey, Index, desc
+from sqlalchemy import Column, Integer, String, Float, Boolean, Date, DateTime, Numeric, Text, Enum, ForeignKey, Index, desc, text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -52,6 +52,9 @@ class Restaurant(Base):
     __tablename__ = "restaurants"
     __table_args__ = (
         Index("ix_restaurants_tags", "tags", postgresql_using="gin"),
+        # The map also looks at the stops of the few restaurants having some
+        Index("ix_restaurants_with_stops", "id",
+              postgresql_where=text("stops IS NOT NULL")),
     )
 
     id = Column(Integer, primary_key=True, index=True)
@@ -86,6 +89,13 @@ class Restaurant(Base):
     # close < open means the slot ends after midnight
     opening_hours = Column(JSONB, nullable=True)
     opening_hours_note = Column(String, nullable=True)
+    # Food trucks only: the places they go back to every week, each with its
+    # own opening hours. The first one is copied into latitude, longitude,
+    # address and city, and opening_hours holds all their slots, so the map
+    # and older apps keep a single position and the weekly hours.
+    # [{"label", "address", "city", "latitude", "longitude",
+    #   "opening_hours": [slot, ...]}, ...]; null = a single place
+    stops = Column(JSONB, nullable=True)
     phone = Column(String, nullable=True)
     website = Column(String, nullable=True)
     facebook = Column(String, nullable=True)
