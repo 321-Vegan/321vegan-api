@@ -12,6 +12,14 @@ from app.models.restaurant_photo import RestaurantPhoto, RestaurantPhotoKind, Re
 from app.models.restaurant_review import RestaurantReview, RestaurantReviewStatus
 from app.models.restaurant_save import RestaurantSave
 
+# Apostrophes vary with the keyboard (iOS types ’) and the source of the
+# name: the search takes them all as '
+APOSTROPHES = "\u2019\u2018\u02bc`\u00b4"
+
+
+def _without_apostrophe_variants(column):
+    return func.translate(column, APOSTROPHES, "'" * len(APOSTROPHES))
+
 
 class RestaurantCRUDRepository(CRUDRepository):
     def get_by_id(self, db: Session, id: int) -> Optional[Restaurant]:
@@ -276,7 +284,8 @@ class RestaurantCRUDRepository(CRUDRepository):
         """
         Find the restaurants whose name (or city, with include_city)
         contains a text, to suggest them in the map search: validated ones,
-        plus the pending ones created by the user. Permanently closed ones
+        plus the pending ones created by the user. Any apostrophe matches
+        any other (' or ’). Permanently closed ones
         are kept, so users learn they closed, but come last. Then name
         matches come before city ones, names starting with the text first,
         then the closest to the given point.
@@ -293,11 +302,14 @@ class RestaurantCRUDRepository(CRUDRepository):
         Returns:
             List[Restaurant]: The matching restaurants.
         """
-        pattern = query_text.strip().replace(
+        pattern = query_text.strip().translate(
+            str.maketrans(APOSTROPHES, "'" * len(APOSTROPHES))).replace(
             '\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
-        starts_with = self._model.name.ilike(f"{pattern}%", escape='\\')
-        name_matches = self._model.name.ilike(f"%{pattern}%", escape='\\')
-        matches = or_(name_matches, self._model.city.ilike(
+        name = _without_apostrophe_variants(self._model.name)
+        city = _without_apostrophe_variants(self._model.city)
+        starts_with = name.ilike(f"{pattern}%", escape='\\')
+        name_matches = name.ilike(f"%{pattern}%", escape='\\')
+        matches = or_(name_matches, city.ilike(
             f"%{pattern}%", escape='\\')) if include_city else name_matches
         query = db.query(self._model).options(
             noload(self._model.photos)
