@@ -221,14 +221,16 @@ class RestaurantCRUDRepository(CRUDRepository):
         user_id: int,
         latitude: Optional[float] = None,
         longitude: Optional[float] = None,
-        limit: int = 10
+        limit: int = 10,
+        include_city: bool = False,
     ) -> List[Restaurant]:
         """
-        Find the restaurants whose name contains a text, to suggest them in
-        the map search: validated ones, plus the pending ones created by the
-        user. Permanently closed ones are kept, so users learn they closed,
-        but come last. Then names starting with the text come first, then
-        the closest to the given point.
+        Find the restaurants whose name (or city, with include_city)
+        contains a text, to suggest them in the map search: validated ones,
+        plus the pending ones created by the user. Permanently closed ones
+        are kept, so users learn they closed, but come last. Then name
+        matches come before city ones, names starting with the text first,
+        then the closest to the given point.
 
         Parameters:
             db (Session): The database session.
@@ -237,6 +239,7 @@ class RestaurantCRUDRepository(CRUDRepository):
             latitude (Optional[float]): The point to sort by distance from.
             longitude (Optional[float]): The point to sort by distance from.
             limit (int): Maximum number of restaurants to return (default 10).
+            include_city (bool): Also match the city.
 
         Returns:
             List[Restaurant]: The matching restaurants.
@@ -244,16 +247,22 @@ class RestaurantCRUDRepository(CRUDRepository):
         pattern = query_text.strip().replace(
             '\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
         starts_with = self._model.name.ilike(f"{pattern}%", escape='\\')
+        name_matches = self._model.name.ilike(f"%{pattern}%", escape='\\')
+        matches = or_(name_matches, self._model.city.ilike(
+            f"%{pattern}%", escape='\\')) if include_city else name_matches
         query = db.query(self._model).options(
             noload(self._model.photos)
         ).filter(
-            self._model.name.ilike(f"%{pattern}%", escape='\\'),
+            matches,
             self._model.date_deleted.is_(None),
             or_(self._model.validated.is_(True),
                 self._model.created_by == user_id),
         )
         is_closed = self._model.operating_status == RestaurantOperatingStatus.PERMANENTLY_CLOSED
-        order = [is_closed.asc(), starts_with.desc()]
+        order = [is_closed.asc()]
+        if include_city:
+            order.append(name_matches.desc())
+        order.append(starts_with.desc())
         if latitude is not None and longitude is not None:
             # Squared degrees are enough to rank by proximity
             order.append(

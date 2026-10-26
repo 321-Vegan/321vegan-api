@@ -385,27 +385,33 @@ def search_restaurants_by_name(
     q: str = Query(..., min_length=2, max_length=100),
     latitude: Optional[float] = Query(default=None, ge=-90, le=90),
     longitude: Optional[float] = Query(default=None, ge=-180, le=180),
+    include_city: bool = Query(default=False),
+    limit: int = Query(default=10, ge=1, le=50),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ) -> List[RestaurantMapOut]:
     """
-    Search restaurants by name for the map search suggestions: validated
-    ones, plus the pending ones created by the user. Permanently closed
-    restaurants are kept (last) so the app can show them as closed.
+    Search restaurants by name (or city) for the map search suggestions and
+    the places to add to a selection: validated ones, plus the pending ones
+    created by the user. Permanently closed restaurants are kept (last) so
+    the app can show them as closed.
 
     Parameters:
         q (str): The text the name must contain (case-insensitive).
         latitude (float): The point to sort by distance from (map center).
         longitude (float): The point to sort by distance from (map center).
+        include_city (bool): Also match the city (name matches first).
+        limit (int): Maximum number of restaurants (default 10, max 50).
         db (Session): The database session.
         current_user (User): The current authenticated user.
 
     Returns:
-        List[RestaurantMapOut]: The matching restaurants (max 10): open
-            ones first, names starting with the text first, then the closest.
+        List[RestaurantMapOut]: The matching restaurants: open ones first,
+            names starting with the text first, then the closest.
     """
     restaurants = restaurant_crud.search_by_name(
-        db, q, current_user.id, latitude, longitude)
+        db, q, current_user.id, latitude, longitude,
+        limit=limit, include_city=include_city)
     return [_map_out(restaurant) for restaurant in restaurants]
 
 
