@@ -67,6 +67,8 @@ class RestaurantBase(BaseModel):
     description: Optional[str] = Field(None, max_length=5000)
     vegan_status: RestaurantVeganStatus
     vegan_options_details: Optional[str] = Field(None, max_length=2000)
+    # At least one vegan option is also gluten free
+    has_gluten_free_options: bool = False
     tags: List[RestaurantTag] = Field(..., min_length=1)
     service_options: List[RestaurantServiceOption] = []
     plant_milk_surcharge: Optional[float] = Field(
@@ -208,6 +210,7 @@ class RestaurantUpdate(BaseModel):
     description: Optional[str] = None
     vegan_status: Optional[RestaurantVeganStatus] = None
     vegan_options_details: Optional[str] = None
+    has_gluten_free_options: Optional[bool] = None
     tags: Optional[List[RestaurantTag]] = None
     service_options: Optional[List[RestaurantServiceOption]] = None
     plant_milk_surcharge: Optional[float] = None
@@ -291,6 +294,7 @@ class RestaurantOut(BaseModel):
     description: Optional[str] = None
     vegan_status: str
     vegan_options_details: Optional[str] = None
+    has_gluten_free_options: bool = False
     tags: List[str]
     service_options: List[str] = []
     plant_milk_surcharge: Optional[float] = None
@@ -336,6 +340,7 @@ class RestaurantMapOut(BaseModel):
     # Shown under the name in the map search suggestions
     city: Optional[str] = None
     vegan_status: str
+    has_gluten_free_options: bool = False
     tags: List[str]
     service_options: List[str] = []
     has_storefront: bool

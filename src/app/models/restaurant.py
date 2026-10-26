@@ -66,6 +66,9 @@ class Restaurant(Base):
                           nullable=False, index=True)
     # Required when vegan_status is VEGAN_OPTIONS
     vegan_options_details = Column(Text, nullable=True)
+    # At least one vegan option is also gluten free
+    has_gluten_free_options = Column(Boolean, default=False,
+                                     server_default="false", nullable=False)
     tags = Column(ARRAY(String), nullable=False, server_default="{}")
     # How to eat there (dine in, takeaway, delivery); empty = unknown
     service_options = Column(ARRAY(String), nullable=False,
