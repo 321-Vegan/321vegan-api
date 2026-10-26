@@ -27,6 +27,7 @@ from app.schemas.restaurant_selection import (
     RestaurantSelectionItemOut,
     RestaurantSelectionOut,
     RestaurantSelectionSend,
+    RestaurantSelectionSendOut,
     RestaurantSelectionSummaryOut,
     RestaurantSelectionSummaryOutPaginated,
     RestaurantSelectionUnreadCountOut,
@@ -47,8 +48,12 @@ def _summary_fields(
     selection: RestaurantSelection,
     user: User,
     share: Optional[RestaurantSelectionShare] = None,
+    accepted_count: Optional[int] = None,
 ) -> dict:
-    """Fields of a selection as seen by the user (its owner, or the recipient of share)."""
+    """
+    Fields of a selection as seen by the user: its owner (with
+    accepted_count), or the recipient of share.
+    """
     items = visible_items(selection, user.id)
     cover_photos = [
         RestaurantPhotoOut.model_validate(item.restaurant.featured_photo)
@@ -64,6 +69,7 @@ def _summary_fields(
         "cover_photos": cover_photos,
         "created_at": selection.created_at,
         "updated_at": selection.updated_at,
+        "accepted_count": accepted_count,
     }
     if share is not None:
         fields.update({
@@ -78,14 +84,25 @@ def _summary_out(
     selection: RestaurantSelection,
     user: User,
     share: Optional[RestaurantSelectionShare] = None,
+    accepted_count: Optional[int] = None,
 ) -> RestaurantSelectionSummaryOut:
-    return RestaurantSelectionSummaryOut(**_summary_fields(selection, user, share))
+    return RestaurantSelectionSummaryOut(
+        **_summary_fields(selection, user, share, accepted_count))
+
+
+def _owner_selection_out(
+    db: Session, selection: RestaurantSelection, user: User
+) -> RestaurantSelectionOut:
+    """The selection for its owner, with how many users accepted it."""
+    accepted = restaurant_selection_share_crud.count_accepted(db, [selection.id])
+    return _selection_out(selection, user, accepted_count=accepted.get(selection.id, 0))
 
 
 def _selection_out(
     selection: RestaurantSelection,
     user: User,
     share: Optional[RestaurantSelectionShare] = None,
+    accepted_count: Optional[int] = None,
 ) -> RestaurantSelectionOut:
     """The selection with its restaurants the user can see, in order."""
     items = [
@@ -95,7 +112,8 @@ def _selection_out(
         )
         for item in visible_items(selection, user.id)
     ]
-    return RestaurantSelectionOut(**_summary_fields(selection, user, share), items=items)
+    return RestaurantSelectionOut(
+        **_summary_fields(selection, user, share, accepted_count), items=items)
 
 
 def _get_selection(db: Session, id: int) -> RestaurantSelection:
@@ -188,7 +206,11 @@ def fetch_my_selections(
     skip, size = pagination_params
     selections, total = restaurant_selection_crud.get_owned(
         db, current_user.id, skip=skip, limit=size)
-    return _paginated([_summary_out(selection, current_user) for selection in selections],
+    accepted = restaurant_selection_share_crud.count_accepted(
+        db, [selection.id for selection in selections])
+    return _paginated([_summary_out(selection, current_user,
+                                    accepted_count=accepted.get(selection.id, 0))
+                       for selection in selections],
                       total, skip, size)
 
 
@@ -293,7 +315,7 @@ def create_selection(
         db, current_user.id, selection_in.title, selection_in.description, items)
     log.info(
         f"Restaurant selection created: {selection.id} by user {current_user.id}")
-    return _selection_out(selection, current_user)
+    return _selection_out(selection, current_user, accepted_count=0)
 
 
 @router.get(
@@ -321,7 +343,7 @@ def fetch_selection(
     """
     selection = _get_selection(db, id)
     if selection.user_id == current_user.id:
-        return _selection_out(selection, current_user)
+        return _owner_selection_out(db, selection, current_user)
     share = _get_received_share(db, id, current_user)
     return _selection_out(selection, current_user, share)
 
@@ -364,7 +386,7 @@ def update_selection(
     updated = restaurant_selection_crud.update_selection(db, selection, changes)
     log.info(
         f"Restaurant selection updated: {id} by user {current_user.id}, fields {list(changes)}")
-    return _selection_out(updated, current_user)
+    return _owner_selection_out(db, updated, current_user)
 
 
 @router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -436,24 +458,34 @@ def remove_restaurant_from_selection(
     restaurant_selection_crud.remove_restaurant(db, selection, restaurant_id)
 
 
-@router.post("/{id}/send", status_code=status.HTTP_204_NO_CONTENT)
+@router.post(
+    "/{id}/send",
+    response_model=RestaurantSelectionSendOut,
+    status_code=status.HTTP_200_OK,
+)
 def send_selection(
     id: int,
     send_in: RestaurantSelectionSend,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
-) -> None:
+) -> RestaurantSelectionSendOut:
     """
-    Send a selection (its owner only) to the user with this email, who can
-    accept or refuse it. The answer is the same whether the email has an
-    account or not, and when it was already sent, so that it doesn't tell
-    who uses the app.
+    Send a selection (its owner only) to a user, who can accept or refuse
+    it: by email, or by friend code.
+    - By email, the answer is the same whether the email has an account or
+      not, so that it doesn't tell who uses the app.
+    - By friend code, the recipient's nickname is given back, to check it
+      went to the right person; an unknown code is a 404.
+    Sending it again to the same user does nothing, even if they refused it.
 
     Parameters:
         id (int): The ID of the selection.
-        send_in (RestaurantSelectionSend): The recipient's email.
+        send_in (RestaurantSelectionSend): The recipient's email or friend code.
         db (Session): The database session.
         current_user (User): The current authenticated user.
+
+    Returns:
+        RestaurantSelectionSendOut: The recipient's nickname, by friend code.
     """
     selection = _get_own_selection(db, id, current_user)
     if not visible_items(selection, current_user.id):
@@ -461,7 +493,18 @@ def send_selection(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Add a restaurant to the selection before sending it",
         )
-    if send_in.email.lower() == current_user.email.lower():
+    by_code = send_in.friend_code is not None
+    if by_code:
+        recipient = user_crud.get_user_by_friend_code(db, send_in.friend_code)
+        if recipient is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No user has this friend code",
+            )
+        is_self = recipient.id == current_user.id
+    else:
+        is_self = send_in.email.lower() == current_user.email.lower()
+    if is_self:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="You cannot send a selection to yourself",
@@ -472,14 +515,16 @@ def send_selection(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"You cannot send more than {MAX_SENDS_PER_DAY} selections per day",
         )
-    recipient = user_crud.get_user_by_email(db, email=send_in.email)
-    if recipient is None:
-        log.info(
-            f"Restaurant selection {id} sent by user {current_user.id} to an unknown email")
-        return
+    if not by_code:
+        recipient = user_crud.get_user_by_email(db, email=send_in.email)
+        if recipient is None:
+            log.info(
+                f"Restaurant selection {id} sent by user {current_user.id} to an unknown email")
+            return {"recipient_nickname": None}
     if restaurant_selection_share_crud.send(db, selection.id, recipient.id):
         log.info(
             f"Restaurant selection {id} sent by user {current_user.id} to user {recipient.id}")
+    return {"recipient_nickname": recipient.nickname if by_code else None}
 
 
 @router.put("/{id}/accept", status_code=status.HTTP_204_NO_CONTENT)

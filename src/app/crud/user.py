@@ -6,7 +6,7 @@ from sqlalchemy import func, desc
 from sqlalchemy.orm import Session
 
 from app.crud.base import CRUDRepository
-from app.models.user import User, UserRole
+from app.models.user import User, UserRole, generate_friend_code, normalize_friend_code
 from app.models.checking import Checking
 from app.security import verify_password, get_password_hash, generate_reset_token
 from app.config import settings
@@ -39,6 +39,69 @@ class UserCRUDRepository(CRUDRepository):
             )
             return None
         return results[0] if results else None
+
+    def get_user_by_friend_code(self, db: Session, code: str) -> Optional[User]:
+        """
+        Get an active user by friend code, however it was typed.
+
+        Parameters:
+            db (Session): The database session.
+            code (str): The friend code.
+
+        Returns:
+            Optional[User]: The user, or None if no active user has it.
+        """
+        return db.query(self._model).filter(
+            self._model.friend_code == normalize_friend_code(code),
+            self._model.is_active == True,
+        ).first()
+
+    def is_friend_code_taken(self, db: Session, code: str) -> bool:
+        """
+        Whether a user (active or not) already has this friend code.
+
+        Parameters:
+            db (Session): The database session.
+            code (str): The friend code, normalized.
+
+        Returns:
+            bool: True if taken.
+        """
+        return db.query(self._model.id).filter(
+            self._model.friend_code == code).first() is not None
+
+    def new_friend_code(self, db: Session) -> str:
+        """
+        A generated friend code no user has.
+
+        Parameters:
+            db (Session): The database session.
+
+        Returns:
+            str: The friend code.
+        """
+        while True:
+            code = generate_friend_code()
+            if not self.is_friend_code_taken(db, code):
+                return code
+
+    def create(self, db: Session, obj_create) -> User:
+        """
+        Create a user, with a generated friend code no one else has.
+
+        Parameters:
+            db (Session): The database session.
+            obj_create (UserCreate): The user data.
+
+        Returns:
+            User: The created user.
+        """
+        data = obj_create.model_dump(exclude_none=True, exclude_unset=True)
+        user = self._model(**data, friend_code=self.new_friend_code(db))
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        return user
 
     @staticmethod
     def is_super_user(user: User) -> bool:

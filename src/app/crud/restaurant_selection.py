@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
-from sqlalchemy import case, or_
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 from app.crud.base import CRUDRepository
 from app.models.restaurant import Restaurant
@@ -243,6 +243,26 @@ class RestaurantSelectionShareCRUDRepository(CRUDRepository):
                recipient_id=recipient_id))
         db.commit()
         return True
+
+    def count_accepted(self, db: Session, selection_ids: List[int]) -> Dict[int, int]:
+        """
+        Count the users who accepted each of some selections.
+
+        Parameters:
+            db (Session): The database session.
+            selection_ids (List[int]): The selection IDs.
+
+        Returns:
+            Dict[int, int]: The number of acceptances by selection ID (missing
+                when none).
+        """
+        if not selection_ids:
+            return {}
+        rows = db.query(self._model.selection_id, func.count(self._model.id)).filter(
+            self._model.selection_id.in_(selection_ids),
+            self._model.status == RestaurantSelectionShareStatus.ACCEPTED,
+        ).group_by(self._model.selection_id).all()
+        return dict(rows)
 
     def count_sent_since(self, db: Session, owner_id: int, since: datetime) -> int:
         """

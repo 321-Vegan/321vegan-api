@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from typing import List, Optional
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 from app.schemas.restaurant import RestaurantMapOut, RestaurantPhotoOut
 
 MAX_SELECTION_RESTAURANTS = 50
@@ -70,7 +70,21 @@ class RestaurantSelectionUpdate(RestaurantSelectionFields):
 
 
 class RestaurantSelectionSend(BaseModel):
-    email: EmailStr
+    """The recipient: by email, or by friend code."""
+    email: Optional[EmailStr] = None
+    friend_code: Optional[str] = Field(None, max_length=32)
+
+    @model_validator(mode="after")
+    def check_one_recipient(self):
+        if (self.email is None) == (not self.friend_code):
+            raise ValueError("Give either an email or a friend code")
+        return self
+
+
+class RestaurantSelectionSendOut(BaseModel):
+    # Sent by friend code: who received it. Never told for an email, so it
+    # doesn't tell who uses the app
+    recipient_nickname: Optional[str] = None
 
 
 class RestaurantSelectionSummaryOut(BaseModel):
@@ -90,6 +104,9 @@ class RestaurantSelectionSummaryOut(BaseModel):
     is_seen: bool = True
     # Recipient only: when it was sent to them
     shared_at: Optional[datetime] = None
+    # Owner only: how many users accepted it (have it with their saved
+    # restaurants)
+    accepted_count: Optional[int] = None
     created_at: datetime
     updated_at: datetime
 

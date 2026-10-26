@@ -12,7 +12,7 @@ from app.log import get_logger
 from app.models import User
 from app.schemas.b12_intake import B12IntakeOut
 from app.schemas.error_report import ErrorReportOutPaginated
-from app.schemas.user import UserOut, UserUpdateOwn
+from app.schemas.user import FriendCodeUpdate, UserOut, UserUpdateOwn
 from app.schemas.auth import EmailChangeRequest, PasswordChangeRequest
 from app.security import get_password_hash, verify_password, validate_password_strength
 from app.services.email import email_service
@@ -103,6 +103,56 @@ def update_current_active_user(
             detail=f"Couldn't update current active user. Error: {str(e)}",
         ) from e
     return user
+
+
+@router.put("/friend-code", response_model=UserOut, status_code=status.HTTP_200_OK)
+def update_my_friend_code(
+    friend_code_in: FriendCodeUpdate,
+    db: Session = Depends(get_db),
+    active_user: User = Depends(get_current_active_user),
+):
+    """
+    Choose the current user's friend code (premium users only). Stored
+    uppercase; it must not be taken, whatever the case typed.
+
+    Parameters:
+        friend_code_in (FriendCodeUpdate): The new friend code.
+        db (Session): The database session.
+        active_user (User): The current active user.
+
+    Returns:
+        UserOut: The updated user.
+
+    Raises:
+        HTTPException: 403 if the user isn't premium, 409 if the code is taken.
+    """
+    if not active_user.is_premium:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only premium users can choose their friend code",
+        )
+    code = friend_code_in.friend_code
+    if code == active_user.friend_code:
+        return active_user
+    if user_crud.is_friend_code_taken(db, code):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This friend code is already taken",
+        )
+    active_user.friend_code = code
+    try:
+        db.commit()
+    except IntegrityError as e:
+        # Taken meanwhile
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This friend code is already taken",
+        ) from e
+    db.refresh(active_user)
+    log.info(f"Friend code changed by user {active_user.id}")
+    return active_user
+
 
 @router.get(
     "/error-reports",

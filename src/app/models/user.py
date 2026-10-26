@@ -1,4 +1,5 @@
 import enum
+import secrets
 from datetime import datetime
 from sqlalchemy import Column, Integer, SmallInteger, String, Boolean, Enum, DateTime, func
 from sqlalchemy.orm import relationship, object_session, with_parent
@@ -16,6 +17,22 @@ class UserRole(str, enum.Enum):
     USER = "user"
 
 
+# Generated friend codes: no 0/O nor 1/I/L, easy to read out and type
+FRIEND_CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
+FRIEND_CODE_LENGTH = 6
+
+
+def generate_friend_code() -> str:
+    """A random friend code, not checked against the existing ones."""
+    return "".join(secrets.choice(FRIEND_CODE_ALPHABET)
+                   for _ in range(FRIEND_CODE_LENGTH))
+
+
+def normalize_friend_code(code: str) -> str:
+    """Friend codes are stored uppercase; spaces and dashes typed are ignored."""
+    return code.strip().upper().replace(" ", "").replace("-", "")
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -24,6 +41,10 @@ class User(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
     role = Column(Enum(UserRole), default=UserRole.USER)
     nickname = Column(String, index=True, nullable=False)
+    # To send things to the user (selections...); uppercase, see
+    # normalize_friend_code. Generated, premium users can choose theirs
+    friend_code = Column(String, unique=True, index=True,
+                         nullable=False, default=generate_friend_code)
     email = Column(String, unique=True, index=True, nullable=False)
     password = Column(String, nullable=False)
     is_active = Column(Boolean, default=False)

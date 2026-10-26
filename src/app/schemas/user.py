@@ -1,6 +1,8 @@
+import re
 from typing import List, Optional, TYPE_CHECKING
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from datetime import datetime, timezone
+from app.models.user import normalize_friend_code
 
 
 class ScanSummaryItem(BaseModel):
@@ -50,6 +52,8 @@ class UserOut(UserBase):
     is_premium: bool = False
     scan_count: int = 0
     scanned_products: List[ScanSummaryItem] = []
+    # To send things to the user, e.g. restaurant selections
+    friend_code: Optional[str] = None
 
     @field_validator('nb_products_sent', mode='before')
     @classmethod
@@ -101,6 +105,29 @@ class UserUpdateOwn(BaseModel):
     avatar: Optional[str] = None
     password: Optional[str] = None
     vegan_since: Optional[datetime] = None
+
+FRIEND_CODE_PATTERN = r"^[A-Z0-9_]{4,16}$"
+# Codes that could pass for the team
+RESERVED_FRIEND_CODES = {"ADMIN", "ADMINISTRATEUR", "MODERATEUR", "MODO",
+                         "SUPPORT", "CONTACT", "EQUIPE", "TEAM", "321VEGAN",
+                         "VEGAN321", "OFFICIEL", "OFFICIAL"}
+
+
+class FriendCodeUpdate(BaseModel):
+    """A friend code chosen by a premium user."""
+    friend_code: str
+
+    @field_validator("friend_code")
+    @classmethod
+    def check_friend_code(cls, value: str) -> str:
+        code = normalize_friend_code(value)
+        if not re.match(FRIEND_CODE_PATTERN, code):
+            raise ValueError(
+                "A friend code has 4 to 16 letters, digits or underscores")
+        if code in RESERVED_FRIEND_CODES:
+            raise ValueError("This friend code is reserved")
+        return code
+
 
 class ScanCountIncrement(BaseModel):
     """Schema for incrementing the user's scan counter.
