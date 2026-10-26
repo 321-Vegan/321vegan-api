@@ -73,6 +73,8 @@ class Restaurant(Base):
     # Extra cost of plant milk in euros: 0 = no surcharge, < 0 = cow milk
     # costs more, null = unknown
     plant_milk_surcharge = Column(Numeric(5, 2), nullable=True)
+    # False = no hot drinks, so no plant milk surcharge to know; null = unknown
+    serves_hot_drinks = Column(Boolean, nullable=True)
     # False only for caterers without a place to visit (delivery, events)
     has_storefront = Column(Boolean, default=True,
                             server_default="true", nullable=False)

@@ -71,6 +71,8 @@ class RestaurantBase(BaseModel):
     service_options: List[RestaurantServiceOption] = []
     plant_milk_surcharge: Optional[float] = Field(
         None, ge=-MAX_PLANT_MILK_SURCHARGE, le=MAX_PLANT_MILK_SURCHARGE)
+    # False = no hot drinks (no surcharge to know), null = unknown
+    serves_hot_drinks: Optional[bool] = None
     has_storefront: bool = True
     service_area: Optional[str] = Field(None, max_length=200)
     opening_hours: Optional[List[OpeningSlot]] = None
@@ -118,6 +120,11 @@ class RestaurantBase(BaseModel):
         if self.vegan_status == RestaurantVeganStatus.FULLY_VEGAN:
             # No cow milk to compare with
             self.plant_milk_surcharge = None
+        if self.plant_milk_surcharge is not None:
+            if self.serves_hot_drinks is False:
+                raise ValueError(
+                    "A place without hot drinks has no plant milk surcharge")
+            self.serves_hot_drinks = True
 
         if not self.has_storefront:
             if RestaurantServiceOption.DINE_IN in self.service_options:
@@ -204,6 +211,7 @@ class RestaurantUpdate(BaseModel):
     tags: Optional[List[RestaurantTag]] = None
     service_options: Optional[List[RestaurantServiceOption]] = None
     plant_milk_surcharge: Optional[float] = None
+    serves_hot_drinks: Optional[bool] = None
     has_storefront: Optional[bool] = None
     service_area: Optional[str] = None
     opening_hours: Optional[List[OpeningSlot]] = None
@@ -286,6 +294,7 @@ class RestaurantOut(BaseModel):
     tags: List[str]
     service_options: List[str] = []
     plant_milk_surcharge: Optional[float] = None
+    serves_hot_drinks: Optional[bool] = None
     has_storefront: bool
     service_area: Optional[str] = None
     opening_hours: Optional[List[OpeningSlot]] = None
@@ -331,6 +340,7 @@ class RestaurantMapOut(BaseModel):
     service_options: List[str] = []
     has_storefront: bool
     plant_milk_surcharge: Optional[float] = None
+    serves_hot_drinks: Optional[bool] = None
     # For the "open now" filter of the map
     opening_hours: Optional[List[OpeningSlot]] = None
     operating_status: str
