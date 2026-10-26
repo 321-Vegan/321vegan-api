@@ -142,6 +142,7 @@ def fetch_restaurants_in_area(
     service_options: Optional[List[str]] = Query(default=None),
     vegan_status: Optional[RestaurantVeganStatus] = Query(default=None),
     plant_milk_surcharge__le: Optional[float] = Query(default=None),
+    has_gluten_free_options: Optional[bool] = Query(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ) -> List[RestaurantMapOut]:
@@ -160,6 +161,8 @@ def fetch_restaurants_in_area(
         plant_milk_surcharge__le (float): Keep restaurants whose plant milk
             surcharge is at most this value (0 = no surcharge). Fully vegan
             places have no cow milk to compare with, so they are kept.
+        has_gluten_free_options (bool): Keep only restaurants with (or
+            without) gluten free vegan options.
         db (Session): The database session.
         current_user (User): The current authenticated user.
 
@@ -176,6 +179,8 @@ def fetch_restaurants_in_area(
         filters['service_options__overlap'] = parsed_options
     if vegan_status is not None:
         filters['vegan_status'] = vegan_status
+    if has_gluten_free_options is not None:
+        filters['has_gluten_free_options'] = has_gluten_free_options
     rows = restaurant_crud.get_in_bounding_box(
         db, min_lat, max_lat, min_lng, max_lng, current_user.id, filters,
         max_plant_milk_surcharge=plant_milk_surcharge__le)
