@@ -20,6 +20,7 @@ from app.services.s3_file_manager import s3_file_manager
 from app.schemas.restaurant import (
     compute_restaurant_change,
     RestaurantCreate,
+    RestaurantDelete,
     RestaurantUpdate,
     RestaurantOut,
     RestaurantMapOut,
@@ -245,8 +246,8 @@ def fetch_my_restaurants(
     current_user: User = Depends(get_current_active_user),
 ) -> RestaurantOutPaginated:
     """
-    Fetch the restaurants created by the current user (pending or
-    validated), newest first.
+    Fetch the restaurants created by the current user (pending, validated,
+    or refused with the reason), newest first.
 
     Parameters:
         db (Session): The database session.
@@ -257,14 +258,8 @@ def fetch_my_restaurants(
         RestaurantOutPaginated: The user's restaurants with pagination data.
     """
     skip, size = pagination_params
-    restaurants, total = restaurant_crud.get_many(
-        db,
-        skip=skip,
-        limit=size,
-        order_by="created_at",
-        descending=True,
-        filters={"created_by": current_user.id},
-    )
+    restaurants, total = restaurant_crud.get_created_by(
+        db, current_user.id, skip=skip, limit=size)
     saved_ids = restaurant_save_crud.get_saved_ids(
         db, current_user.id, [restaurant.id for restaurant in restaurants])
     pages = (total + size - 1) // size
@@ -654,15 +649,18 @@ def update_restaurant(
 )
 def delete_restaurant(
     id: int,
+    delete_in: Optional[RestaurantDelete] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(RoleChecker(["admin"]))
 ) -> None:
     """
     Soft-delete a restaurant: sets date_deleted instead of removing the row,
-    so its reviews and photos are preserved.
+    so its reviews and photos are preserved. A pending one is refused: it
+    stays in its creator's list, with the reason if given.
 
     Parameters:
         id (int): The ID of the restaurant.
+        delete_in (Optional[RestaurantDelete]): The refusal reason, if any.
         db (Session): The database session.
         current_user (User): The current authenticated user.
     """
@@ -672,7 +670,10 @@ def delete_restaurant(
             status_code=status.HTTP_404_NOT_FOUND, detail="Restaurant not found"
         )
 
-    restaurant_crud.soft_delete(db, restaurant)
+    reason = None
+    if not restaurant.validated and delete_in is not None:
+        reason = (delete_in.rejection_reason or "").strip() or None
+    restaurant_crud.soft_delete(db, restaurant, rejection_reason=reason)
     log.info(f"Restaurant soft-deleted: ID {id}")
 
 

@@ -232,6 +232,11 @@ class RestaurantUpdate(BaseModel):
     validated: Optional[bool] = None
 
 
+class RestaurantDelete(BaseModel):
+    # Why a pending restaurant is refused, shown to its creator
+    rejection_reason: Optional[str] = Field(None, max_length=500)
+
+
 class RestaurantPhotoOut(BaseModel):
     id: int
     restaurant_id: int
@@ -316,6 +321,9 @@ class RestaurantOut(BaseModel):
     osm_id: Optional[str] = None
     created_by: Optional[int] = None
     validated: bool
+    # Refused by a moderator (only listed to its creator), with the reason
+    is_rejected: bool = False
+    rejection_reason: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     # Approved photo shown first on the restaurant page

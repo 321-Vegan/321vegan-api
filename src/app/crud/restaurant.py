@@ -132,7 +132,43 @@ class RestaurantCRUDRepository(CRUDRepository):
         db.refresh(restaurant)
         return restaurant
 
-    def soft_delete(self, db: Session, restaurant: Restaurant) -> Restaurant:
+    def get_created_by(
+        self,
+        db: Session,
+        user_id: int,
+        skip: int = 0,
+        limit: int = 20
+    ) -> Tuple[List[Restaurant], int]:
+        """
+        Get the restaurants created by a user, newest first: pending,
+        validated, and the ones refused (deleted while pending), so the user
+        learns why.
+
+        Parameters:
+            db (Session): The database session.
+            user_id (int): The user ID.
+            skip (int): Number of records to skip.
+            limit (int): Maximum number of records to retrieve.
+
+        Returns:
+            Tuple[List[Restaurant], int]: The restaurants and total count.
+        """
+        query = db.query(self._model).filter(
+            self._model.created_by == user_id,
+            or_(self._model.date_deleted.is_(None),
+                self._model.validated.is_(False)),
+        )
+        total = query.count()
+        restaurants = query.order_by(
+            self._model.created_at.desc()).offset(skip).limit(limit).all()
+        return restaurants, total
+
+    def soft_delete(
+        self,
+        db: Session,
+        restaurant: Restaurant,
+        rejection_reason: Optional[str] = None,
+    ) -> Restaurant:
         """
         Soft-deletes a restaurant by setting its date_deleted timestamp, so
         its reviews and photos are preserved.
@@ -140,11 +176,13 @@ class RestaurantCRUDRepository(CRUDRepository):
         Parameters:
             db (Session): The database session.
             restaurant (Restaurant): The restaurant to soft-delete.
+            rejection_reason (Optional[str]): Why it was refused, when pending.
 
         Returns:
             Restaurant: The soft-deleted restaurant.
         """
         restaurant.date_deleted = datetime.now(timezone.utc)
+        restaurant.rejection_reason = rejection_reason
         db.add(restaurant)
         db.commit()
         db.refresh(restaurant)

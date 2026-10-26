@@ -114,6 +114,8 @@ class Restaurant(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(
     ), onupdate=func.now(), nullable=False)
     date_deleted = Column(DateTime(timezone=True), nullable=True, index=True)
+    # Why a moderator refused it (deleted while pending), shown to its creator
+    rejection_reason = Column(String, nullable=True)
     photos = relationship("RestaurantPhoto",
                           back_populates="restaurant",
                           cascade="all, delete",
@@ -130,6 +132,11 @@ class Restaurant(Base):
     def featured_photo(self) -> Optional[RestaurantPhoto]:
         """The approved photo shown first on the restaurant page."""
         return pick_featured_photo(self.photos)
+
+    @property
+    def is_rejected(self) -> bool:
+        """Deleted by a moderator before being validated."""
+        return not self.validated and self.date_deleted is not None
 
     @property
     def is_closed_now(self) -> bool:
