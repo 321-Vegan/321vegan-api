@@ -26,4 +26,5 @@ from app.models.restaurant_review import RestaurantReview, RestaurantReviewStatu
 from app.models.restaurant_edit_suggestion import RestaurantEditSuggestion, RestaurantEditSuggestionKind, RestaurantEditSuggestionStatus
 from app.models.restaurant_edit import RestaurantEdit
 from app.models.restaurant_save import RestaurantSave
+from app.models.restaurant_selection import RestaurantSelection, RestaurantSelectionItem, RestaurantSelectionShare, RestaurantSelectionShareStatus
 from app.models.product_edit import ProductEdit

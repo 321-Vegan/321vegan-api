@@ -28,6 +28,7 @@ from app.routes.b12_intake import router as b12_intake_router
 from app.routes.restaurant import router as restaurant_router
 from app.routes.restaurant_review import router as restaurant_review_router
 from app.routes.restaurant_edit_suggestion import router as restaurant_edit_suggestion_router
+from app.routes.restaurant_selection import router as restaurant_selection_router
 
 
 __all__ = [
@@ -61,4 +62,5 @@ __all__ = [
     "restaurant_router",
     "restaurant_review_router",
     "restaurant_edit_suggestion_router",
+    "restaurant_selection_router",
 ]
