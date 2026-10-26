@@ -55,7 +55,7 @@ def _check_no_overlap(slots: List[OpeningSlot]) -> None:
 class RestaurantStop(BaseModel):
     """
     A place a food truck goes back to every week. Empty opening_hours = its
-    days there vary (see opening_hours_note).
+    days there vary, told in its note ("un samedi sur deux").
     """
     label: Optional[str] = Field(None, max_length=100)
     address: Optional[str] = None
@@ -63,8 +63,9 @@ class RestaurantStop(BaseModel):
     latitude: float = Field(..., ge=-90, le=90)
     longitude: float = Field(..., ge=-180, le=180)
     opening_hours: List[OpeningSlot] = []
+    note: Optional[str] = Field(None, max_length=200)
 
-    @field_validator("label", "address", "city", mode="before")
+    @field_validator("label", "address", "city", "note", mode="before")
     @classmethod
     def strip_text(cls, value):
         if isinstance(value, str):

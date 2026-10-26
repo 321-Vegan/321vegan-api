@@ -94,7 +94,7 @@ class Restaurant(Base):
     # address and city, and opening_hours holds all their slots, so the map
     # and older apps keep a single position and the weekly hours.
     # [{"label", "address", "city", "latitude", "longitude",
-    #   "opening_hours": [slot, ...]}, ...]; null = a single place
+    #   "opening_hours": [slot, ...], "note"}, ...]; null = a single place
     stops = Column(JSONB, nullable=True)
     phone = Column(String, nullable=True)
     website = Column(String, nullable=True)
