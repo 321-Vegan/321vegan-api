@@ -13,7 +13,7 @@ from app.models.product import Product
 from app.models.user import UserRole
 from app.models.error_report import ErrorReport
 from app.models.scan_event import ScanEvent
-from app.schemas.user import UserCreate, UserOutPaginated, UserOut, UserUpdate, UserFilters, UserUpdateOwn, UserPatch, ScanCountIncrement, ScanCountInit, ScanCountOut
+from app.schemas.user import FriendCodeAdminUpdate, UserCreate, UserOutPaginated, UserOut, UserUpdate, UserFilters, UserUpdateOwn, UserPatch, ScanCountIncrement, ScanCountInit, ScanCountOut
 from typing import Literal
 from app.security import get_password_hash
 
@@ -405,6 +405,56 @@ def update_user(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Couldn't update user with id {id}. Error: {str(e)}",
         ) from e
+    return user
+
+
+@router.put("/{id}/friend-code", response_model=UserOut, status_code=status.HTTP_200_OK, dependencies=[Depends(RoleChecker(["admin"]))])
+def update_user_friend_code(
+    id: int,
+    friend_code_in: FriendCodeAdminUpdate,
+    db: Session = Depends(get_db),
+):
+    """
+    Set a user's friend code (admins only), e.g. for support. Reserved
+    codes are allowed; no code gives the user a new generated one.
+
+    Parameters:
+        id (int): The ID of the user.
+        friend_code_in (FriendCodeAdminUpdate): The new friend code, or null.
+        db (Session): The database session.
+
+    Returns:
+        UserOut: The updated user.
+
+    Raises:
+        HTTPException: 404 if the user is not found, 409 if the code is taken.
+    """
+    user = user_crud.get_one(db, User.id == id)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User with id {id} not found. Cannot update.",
+        )
+    code = friend_code_in.friend_code or user_crud.new_friend_code(db)
+    if code == user.friend_code:
+        return user
+    if user_crud.is_friend_code_taken(db, code):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This friend code is already taken",
+        )
+    user.friend_code = code
+    try:
+        db.commit()
+    except IntegrityError as e:
+        # Taken meanwhile
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This friend code is already taken",
+        ) from e
+    db.refresh(user)
+    log.info(f"Friend code of user {id} changed by an admin")
     return user
 
 

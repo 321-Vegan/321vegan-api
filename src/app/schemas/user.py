@@ -129,6 +129,24 @@ class FriendCodeUpdate(BaseModel):
         return code
 
 
+class FriendCodeAdminUpdate(BaseModel):
+    """A friend code set by an admin: reserved ones allowed, null for a new generated one."""
+    friend_code: Optional[str] = None
+
+    @field_validator("friend_code")
+    @classmethod
+    def check_friend_code(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        code = normalize_friend_code(value)
+        if not code:
+            return None
+        if not re.match(FRIEND_CODE_PATTERN, code):
+            raise ValueError(
+                "A friend code has 4 to 16 letters, digits or underscores")
+        return code
+
+
 class ScanCountIncrement(BaseModel):
     """Schema for incrementing the user's scan counter.
 
