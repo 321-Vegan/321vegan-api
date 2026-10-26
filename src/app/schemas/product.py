@@ -97,6 +97,17 @@ class ProductEditOut(BaseModel):
         }
 
 
+class ProductLockOut(BaseModel):
+    """The contributor holding the validation lock of a product."""
+    locked_by: str
+    locked_at: datetime
+
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f%z"),
+        }
+
+
 class ProductOutPaginated(BaseModel):
     items: List[ProductOut]
     total: int

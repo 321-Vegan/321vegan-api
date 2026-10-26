@@ -2,21 +2,34 @@ import time
 from pathlib import Path
 from typing import Annotated, List, Optional, Tuple
 from fastapi import APIRouter, Body, Depends, HTTPException, status, File, UploadFile
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.routes.dependencies import get_current_active_user, get_pagination_params, get_sort_by_params, RoleChecker, get_current_active_user_or_client
-from app.crud import product_crud
+from app.crud import product_crud, product_lock_crud
 from app.crud.user import user_crud
 from app.database.db import get_db
 from app.log import get_logger
-from app.models import Product, User
+from app.models import Product, ProductLock, User
 from app.models.product import ProductState
-from app.schemas.product import ProductCreate, ProductOut, ProductUpdate, ProductOutPaginated, ProductOutCount, ProductFilters, ProductFile, ProductBrandAnswerFile, ProductEditOut
+from app.schemas.product import ProductCreate, ProductOut, ProductUpdate, ProductOutPaginated, ProductOutCount, ProductFilters, ProductFile, ProductBrandAnswerFile, ProductEditOut, ProductLockOut
 from app.services.s3_file_manager import s3_file_manager
 
 log = get_logger(__name__)
 
 router = APIRouter()
+
+
+def _lock_out(lock: ProductLock) -> ProductLockOut:
+    return ProductLockOut(locked_by=lock.user.nickname, locked_at=lock.locked_at)
+
+
+def _lock_conflict(lock: ProductLock) -> HTTPException:
+    """The 423 error for a product locked by another user, with the lock as detail"""
+    return HTTPException(
+        status_code=status.HTTP_423_LOCKED,
+        detail=jsonable_encoder(_lock_out(lock)),
+    )
 
 
 @router.get(
@@ -315,6 +328,9 @@ def update_product(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Product with id {id} not found",
         )
+    lock = product_lock_crud.get_live_lock(db, product)
+    if lock and lock.user_id != active_user.id:
+        raise _lock_conflict(lock)
 
     try:
         if active_user.is_contributor() and product.state == ProductState.PUBLISHED:
@@ -326,6 +342,8 @@ def update_product(
                 **dict_product_update,
             )
         product = product_crud.update(db, product, product_update, active_user)
+        # The work is done: release the user's lock
+        product_lock_crud.unlock(db, product, active_user)
     except IntegrityError as e:
         error_message = str(e.orig)
         if "unique constraint" in error_message.lower() and "ean" in error_message.lower():
@@ -349,6 +367,76 @@ def update_product(
             detail=f"Couldn't update product with id {id}. Error: {str(e)}",
         ) from e
     return product
+
+
+@router.post(
+    "/{id}/lock",
+    response_model=ProductLockOut,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(RoleChecker(["contributor", "admin"]))]
+)
+def lock_product(
+    id: int,
+    db: Session = Depends(get_db),
+    active_user: User = Depends(get_current_active_user),
+):
+    """
+    Take or renew the validation lock of a product, so that two
+    contributors don't work on it at the same time. The lock expires
+    after PRODUCT_LOCK_DURATION without being renewed.
+
+    Parameters:
+        id (int): The ID of the product to lock.
+        db (Session): The database session.
+
+    Returns:
+        ProductLockOut: The lock taken by the user.
+
+    Raises:
+        HTTPException: If the product is not found.
+        HTTPException: If another user holds a live lock (423),
+            with this lock as detail.
+    """
+    product = product_crud.get_one(db, Product.id == id)
+    if product is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Product with id {id} not found",
+        )
+    lock = product_lock_crud.lock(db, product, active_user)
+    if lock.user_id != active_user.id:
+        raise _lock_conflict(lock)
+    return _lock_out(lock)
+
+
+@router.delete(
+    "/{id}/lock",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(RoleChecker(["contributor", "admin"]))]
+)
+def unlock_product(
+    id: int,
+    db: Session = Depends(get_db),
+    active_user: User = Depends(get_current_active_user),
+):
+    """
+    Release the validation lock of a product. Does nothing if the
+    lock is held by another user.
+
+    Parameters:
+        id (int): The ID of the product to unlock.
+        db (Session): The database session.
+
+    Raises:
+        HTTPException: If the product is not found.
+    """
+    product = product_crud.get_one(db, Product.id == id)
+    if product is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Product with id {id} not found",
+        )
+    product_lock_crud.unlock(db, product, active_user)
 
 
 @router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(RoleChecker(["contributor", "admin"]))])
