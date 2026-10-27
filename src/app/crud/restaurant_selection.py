@@ -3,6 +3,7 @@ from typing import Dict, List, Optional, Tuple
 from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 from app.crud.base import CRUDRepository
+from app.crud.restaurant import search_pattern, without_apostrophe_variants
 from app.models.restaurant import Restaurant
 from app.models.restaurant_selection import (
     RestaurantSelection,
@@ -76,6 +77,7 @@ class RestaurantSelectionCRUDRepository(CRUDRepository):
         self,
         db: Session,
         sort: str = SORT_RECENT,
+        search: Optional[str] = None,
         skip: int = 0,
         limit: int = 20,
     ) -> Tuple[List[RestaurantSelection], int]:
@@ -87,6 +89,8 @@ class RestaurantSelectionCRUDRepository(CRUDRepository):
         Parameters:
             db (Session): The database session.
             sort (str): SORT_RECENT or SORT_POPULAR.
+            search (Optional[str]): Keep the ones whose title contains it
+                (case-insensitive, any apostrophe).
             skip (int): Number of records to skip.
             limit (int): Maximum number of records to retrieve.
 
@@ -103,6 +107,9 @@ class RestaurantSelectionCRUDRepository(CRUDRepository):
                 Restaurant.date_deleted.is_(None),
             ).exists(),
         )
+        if search and search.strip():
+            query = query.filter(without_apostrophe_variants(self._model.title).ilike(
+                f"%{search_pattern(search)}%", escape='\\'))
         total = query.count()
         order = []
         if sort == SORT_POPULAR:

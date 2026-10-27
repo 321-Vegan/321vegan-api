@@ -17,8 +17,19 @@ from app.models.restaurant_save import RestaurantSave
 APOSTROPHES = "\u2019\u2018\u02bc`\u00b4"
 
 
-def _without_apostrophe_variants(column):
+def without_apostrophe_variants(column):
+    """The column with its apostrophes as ', to compare with search_pattern."""
     return func.translate(column, APOSTROPHES, "'" * len(APOSTROPHES))
+
+
+def search_pattern(text: str) -> str:
+    """
+    A searched text ready for an ILIKE with escape='\\': apostrophes as ',
+    and the LIKE wildcards in it taken literally.
+    """
+    return text.strip().translate(
+        str.maketrans(APOSTROPHES, "'" * len(APOSTROPHES))).replace(
+        '\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
 
 
 class RestaurantCRUDRepository(CRUDRepository):
@@ -302,11 +313,9 @@ class RestaurantCRUDRepository(CRUDRepository):
         Returns:
             List[Restaurant]: The matching restaurants.
         """
-        pattern = query_text.strip().translate(
-            str.maketrans(APOSTROPHES, "'" * len(APOSTROPHES))).replace(
-            '\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
-        name = _without_apostrophe_variants(self._model.name)
-        city = _without_apostrophe_variants(self._model.city)
+        pattern = search_pattern(query_text)
+        name = without_apostrophe_variants(self._model.name)
+        city = without_apostrophe_variants(self._model.city)
         starts_with = name.ilike(f"{pattern}%", escape='\\')
         name_matches = name.ilike(f"%{pattern}%", escape='\\')
         matches = or_(name_matches, city.ilike(

@@ -298,6 +298,7 @@ def mark_received_selections_seen(
 )
 def fetch_public_selections(
     sort: Literal["recent", "popular"] = Query(default=SORT_RECENT),
+    search: Optional[str] = Query(default=None, max_length=100),
     db: Session = Depends(get_db),
     pagination_params: Tuple[int, int] = Depends(get_pagination_params),
     current_user: User = Depends(get_current_active_user),
@@ -308,6 +309,7 @@ def fetch_public_selections(
 
     Parameters:
         sort (str): "recent" or "popular".
+        search (Optional[str]): Keep the ones whose title contains it.
         db (Session): The database session.
         pagination_params (Tuple[int, int]): The pagination parameters (skip, limit).
         current_user (User): The current authenticated user.
@@ -317,7 +319,7 @@ def fetch_public_selections(
     """
     skip, size = pagination_params
     selections, total = restaurant_selection_crud.get_public(
-        db, sort=sort, skip=skip, limit=size)
+        db, sort=sort, search=search, skip=skip, limit=size)
     ids = [selection.id for selection in selections]
     accepted = restaurant_selection_share_crud.count_accepted(db, ids)
     shares = restaurant_selection_share_crud.get_for_many(
