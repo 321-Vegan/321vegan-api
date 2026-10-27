@@ -116,17 +116,18 @@ def _selection_out(
 ) -> RestaurantSelectionOut:
     """
     The selection with its restaurants the user can see, in order, and the
-    rating its author gave each in their review.
+    review its author left on each (rating and ID).
     """
-    ratings = restaurant_selection_crud.get_author_ratings(db, selection)
-    items = [
-        RestaurantSelectionItemOut(
+    reviews = restaurant_selection_crud.get_author_reviews(db, selection)
+    items = []
+    for item in visible_items(selection, user.id):
+        review_id, rating = reviews.get(item.restaurant_id, (None, None))
+        items.append(RestaurantSelectionItemOut(
             restaurant=RestaurantMapOut.model_validate(item.restaurant),
             note=item.note,
-            author_rating=ratings.get(item.restaurant_id),
-        )
-        for item in visible_items(selection, user.id)
-    ]
+            author_rating=rating,
+            author_review_id=review_id,
+        ))
     return RestaurantSelectionOut(
         **_summary_fields(selection, user, share, accepted_count), items=items)
 

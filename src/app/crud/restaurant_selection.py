@@ -127,29 +127,32 @@ class RestaurantSelectionCRUDRepository(CRUDRepository):
         selections = query.order_by(*order).offset(skip).limit(limit).all()
         return selections, total
 
-    def get_author_ratings(
+    def get_author_reviews(
         self, db: Session, selection: RestaurantSelection
-    ) -> Dict[int, int]:
+    ) -> Dict[int, Tuple[int, int]]:
         """
-        Get the ratings of the approved reviews the author of a selection
-        left on its restaurants.
+        Get the approved reviews the author of a selection left on its
+        restaurants.
 
         Parameters:
             db (Session): The database session.
             selection (RestaurantSelection): The selection.
 
         Returns:
-            Dict[int, int]: The rating by restaurant ID, for those reviewed.
+            Dict[int, Tuple[int, int]]: The review ID and rating by restaurant
+                ID, for those reviewed.
         """
         restaurant_ids = [item.restaurant_id for item in selection.items]
         if not restaurant_ids:
             return {}
-        rows = db.query(RestaurantReview.restaurant_id, RestaurantReview.rating).filter(
+        rows = db.query(
+            RestaurantReview.restaurant_id, RestaurantReview.id, RestaurantReview.rating
+        ).filter(
             RestaurantReview.user_id == selection.user_id,
             RestaurantReview.restaurant_id.in_(restaurant_ids),
             RestaurantReview.status == RestaurantReviewStatus.APPROVED,
         ).all()
-        return dict(rows)
+        return {restaurant_id: (id, rating) for restaurant_id, id, rating in rows}
 
     def set_cover(
         self, db: Session, selection: RestaurantSelection, path: Optional[str]
