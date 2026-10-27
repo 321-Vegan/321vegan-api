@@ -104,20 +104,26 @@ def _owner_selection_out(
 ) -> RestaurantSelectionOut:
     """The selection for its owner, with how many users accepted it."""
     accepted = restaurant_selection_share_crud.count_accepted(db, [selection.id])
-    return _selection_out(selection, user, accepted_count=accepted.get(selection.id, 0))
+    return _selection_out(db, selection, user, accepted_count=accepted.get(selection.id, 0))
 
 
 def _selection_out(
+    db: Session,
     selection: RestaurantSelection,
     user: User,
     share: Optional[RestaurantSelectionShare] = None,
     accepted_count: Optional[int] = None,
 ) -> RestaurantSelectionOut:
-    """The selection with its restaurants the user can see, in order."""
+    """
+    The selection with its restaurants the user can see, in order, and the
+    rating its author gave each in their review.
+    """
+    ratings = restaurant_selection_crud.get_author_ratings(db, selection)
     items = [
         RestaurantSelectionItemOut(
             restaurant=RestaurantMapOut.model_validate(item.restaurant),
             note=item.note,
+            author_rating=ratings.get(item.restaurant_id),
         )
         for item in visible_items(selection, user.id)
     ]
@@ -370,7 +376,7 @@ def create_selection(
         is_public=selection_in.is_public)
     log.info(
         f"Restaurant selection created: {selection.id} by user {current_user.id}")
-    return _selection_out(selection, current_user, accepted_count=0)
+    return _selection_out(db, selection, current_user, accepted_count=0)
 
 
 @router.get(
@@ -401,10 +407,10 @@ def fetch_selection(
         return _owner_selection_out(db, selection, current_user)
     if not selection.is_public:
         share = _get_received_share(db, id, current_user)
-        return _selection_out(selection, current_user, share)
+        return _selection_out(db, selection, current_user, share)
     share = restaurant_selection_share_crud.get_for(db, id, current_user.id)
     accepted = restaurant_selection_share_crud.count_accepted(db, [selection.id])
-    return _selection_out(selection, current_user, share,
+    return _selection_out(db, selection, current_user, share,
                           accepted_count=accepted.get(selection.id, 0))
 
 

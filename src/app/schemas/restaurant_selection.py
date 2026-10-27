@@ -135,6 +135,8 @@ class RestaurantSelectionSummaryOut(BaseModel):
 class RestaurantSelectionItemOut(BaseModel):
     restaurant: RestaurantMapOut
     note: Optional[str] = None
+    # Rating of the selection author's approved review of it, if any
+    author_rating: Optional[int] = None
 
 
 class RestaurantSelectionOut(RestaurantSelectionSummaryOut):

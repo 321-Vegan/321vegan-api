@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.crud.base import CRUDRepository
 from app.crud.restaurant import search_pattern, without_apostrophe_variants
 from app.models.restaurant import Restaurant
+from app.models.restaurant_review import RestaurantReview, RestaurantReviewStatus
 from app.models.restaurant_selection import (
     RestaurantSelection,
     RestaurantSelectionItem,
@@ -125,6 +126,30 @@ class RestaurantSelectionCRUDRepository(CRUDRepository):
         order.append(self._model.published_at.desc())
         selections = query.order_by(*order).offset(skip).limit(limit).all()
         return selections, total
+
+    def get_author_ratings(
+        self, db: Session, selection: RestaurantSelection
+    ) -> Dict[int, int]:
+        """
+        Get the ratings of the approved reviews the author of a selection
+        left on its restaurants.
+
+        Parameters:
+            db (Session): The database session.
+            selection (RestaurantSelection): The selection.
+
+        Returns:
+            Dict[int, int]: The rating by restaurant ID, for those reviewed.
+        """
+        restaurant_ids = [item.restaurant_id for item in selection.items]
+        if not restaurant_ids:
+            return {}
+        rows = db.query(RestaurantReview.restaurant_id, RestaurantReview.rating).filter(
+            RestaurantReview.user_id == selection.user_id,
+            RestaurantReview.restaurant_id.in_(restaurant_ids),
+            RestaurantReview.status == RestaurantReviewStatus.APPROVED,
+        ).all()
+        return dict(rows)
 
     def set_cover(
         self, db: Session, selection: RestaurantSelection, path: Optional[str]
