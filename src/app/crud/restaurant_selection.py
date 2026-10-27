@@ -352,8 +352,9 @@ class RestaurantSelectionShareCRUDRepository(CRUDRepository):
 
     def send(self, db: Session, selection_id: int, recipient_id: int) -> bool:
         """
-        Send a selection to a user. Nothing to do when already sent, even if
-        they refused or removed it.
+        Send a selection to a user. Sending it again after they refused or
+        removed it puts it back as pending, like a new share; nothing to do
+        when it's still pending or accepted.
 
         Parameters:
             db (Session): The database session.
@@ -363,10 +364,18 @@ class RestaurantSelectionShareCRUDRepository(CRUDRepository):
         Returns:
             bool: Whether it was sent now.
         """
-        if self.get_for(db, selection_id, recipient_id) is not None:
+        share = self.get_for(db, selection_id, recipient_id)
+        if share is None:
+            db.add(self._model(selection_id=selection_id,
+                   recipient_id=recipient_id))
+        elif share.status == RestaurantSelectionShareStatus.DECLINED:
+            share.status = RestaurantSelectionShareStatus.PENDING
+            # Sent now: unread again, and counted in the daily sends
+            share.created_at = datetime.now()
+            share.seen_at = None
+            share.responded_at = None
+        else:
             return False
-        db.add(self._model(selection_id=selection_id,
-               recipient_id=recipient_id))
         db.commit()
         return True
 

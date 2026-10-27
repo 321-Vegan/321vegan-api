@@ -550,7 +550,8 @@ def send_selection(
       not, so that it doesn't tell who uses the app.
     - By friend code, the recipient's nickname is given back, to check it
       went to the right person; an unknown code is a 404.
-    Sending it again to the same user does nothing, even if they refused it.
+    Sending it again to the same user does nothing while it's pending or
+    accepted; if they refused or removed it, it's pending again.
 
     Parameters:
         id (int): The ID of the selection.

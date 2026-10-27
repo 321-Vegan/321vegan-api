@@ -10,8 +10,7 @@ class RestaurantSelectionShareStatus(str, enum.Enum):
     PENDING = "PENDING"
     # Shown with the recipient's saved restaurants
     ACCEPTED = "ACCEPTED"
-    # Refused, or removed after accepting: kept so that sending the selection
-    # again does nothing
+    # Refused, or removed after accepting: back to pending if sent again
     DECLINED = "DECLINED"
 
 
