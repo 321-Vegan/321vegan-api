@@ -15,6 +15,10 @@ from app.models.restaurant_selection import (
 KEPT_SHARE_STATUSES = (RestaurantSelectionShareStatus.PENDING,
                        RestaurantSelectionShareStatus.ACCEPTED)
 
+# Orders of the public selections
+SORT_RECENT = "recent"
+SORT_POPULAR = "popular"
+
 
 def is_restaurant_visible(restaurant: Restaurant, user_id: int) -> bool:
     """Same rule as the saved restaurants: validated, or created by the user."""
@@ -68,6 +72,74 @@ class RestaurantSelectionCRUDRepository(CRUDRepository):
             self._model.updated_at.desc()).offset(skip).limit(limit).all()
         return selections, total
 
+    def get_public(
+        self,
+        db: Session,
+        sort: str = SORT_RECENT,
+        skip: int = 0,
+        limit: int = 20,
+    ) -> Tuple[List[RestaurantSelection], int]:
+        """
+        Get the public selections having a restaurant visible to everyone
+        (validated, not deleted): the most recently published first, or the
+        most taken (accepted by the most users) first.
+
+        Parameters:
+            db (Session): The database session.
+            sort (str): SORT_RECENT or SORT_POPULAR.
+            skip (int): Number of records to skip.
+            limit (int): Maximum number of records to retrieve.
+
+        Returns:
+            Tuple[List[RestaurantSelection], int]: The selections and total count.
+        """
+        query = db.query(self._model).filter(
+            self._model.is_public.is_(True),
+            db.query(RestaurantSelectionItem.id).join(
+                Restaurant, Restaurant.id == RestaurantSelectionItem.restaurant_id
+            ).filter(
+                RestaurantSelectionItem.selection_id == self._model.id,
+                Restaurant.validated.is_(True),
+                Restaurant.date_deleted.is_(None),
+            ).exists(),
+        )
+        total = query.count()
+        order = []
+        if sort == SORT_POPULAR:
+            accepted = db.query(
+                RestaurantSelectionShare.selection_id,
+                func.count(RestaurantSelectionShare.id).label("count"),
+            ).filter(
+                RestaurantSelectionShare.status == RestaurantSelectionShareStatus.ACCEPTED
+            ).group_by(RestaurantSelectionShare.selection_id).subquery()
+            query = query.outerjoin(
+                accepted, accepted.c.selection_id == self._model.id)
+            order.append(func.coalesce(accepted.c.count, 0).desc())
+        order.append(self._model.published_at.desc())
+        selections = query.order_by(*order).offset(skip).limit(limit).all()
+        return selections, total
+
+    def set_cover(
+        self, db: Session, selection: RestaurantSelection, path: Optional[str]
+    ) -> Optional[str]:
+        """
+        Set (or remove, with None) the cover image of a selection.
+
+        Parameters:
+            db (Session): The database session.
+            selection (RestaurantSelection): The selection.
+            path (Optional[str]): The bucket path of the new image.
+
+        Returns:
+            Optional[str]: The path of the previous image, to delete.
+        """
+        previous = selection.cover_path
+        selection.cover_path = path
+        selection.updated_at = datetime.now()
+        db.commit()
+        db.refresh(selection)
+        return previous
+
     def get_visible_restaurants(
         self, db: Session, restaurant_ids: List[int], user_id: int
     ) -> Dict[int, Restaurant]:
@@ -99,6 +171,7 @@ class RestaurantSelectionCRUDRepository(CRUDRepository):
         title: str,
         description: Optional[str],
         items: List[dict],
+        is_public: bool = False,
     ) -> RestaurantSelection:
         """
         Create a selection.
@@ -109,12 +182,15 @@ class RestaurantSelectionCRUDRepository(CRUDRepository):
             title (str): The title.
             description (Optional[str]): The description.
             items (List[dict]): The restaurants ({restaurant_id, note}), in order.
+            is_public (bool): Listed for every user.
 
         Returns:
             RestaurantSelection: The created selection.
         """
         selection = self._model(
-            user_id=user_id, title=title, description=description)
+            user_id=user_id, title=title, description=description,
+            is_public=is_public,
+            published_at=datetime.now() if is_public else None)
         selection.items = [
             RestaurantSelectionItem(
                 restaurant_id=item["restaurant_id"], note=item.get("note"), position=position)
@@ -136,7 +212,8 @@ class RestaurantSelectionCRUDRepository(CRUDRepository):
         Parameters:
             db (Session): The database session.
             selection (RestaurantSelection): The selection.
-            changes (dict): The changed fields (title, description, items).
+            changes (dict): The changed fields (title, description, items,
+                is_public: only to make it public).
 
         Returns:
             RestaurantSelection: The updated selection.
@@ -144,6 +221,9 @@ class RestaurantSelectionCRUDRepository(CRUDRepository):
         for field in ("title", "description"):
             if field in changes:
                 setattr(selection, field, changes[field])
+        if changes.get("is_public") and not selection.is_public:
+            selection.is_public = True
+            selection.published_at = datetime.now()
         if changes.get("items") is not None:
             current = {item.restaurant_id: item for item in selection.items}
             new_items = []
@@ -223,6 +303,52 @@ class RestaurantSelectionShareCRUDRepository(CRUDRepository):
             self._model.selection_id == selection_id,
             self._model.recipient_id == recipient_id,
         ).first()
+
+    def get_for_many(
+        self, db: Session, selection_ids: List[int], recipient_id: int
+    ) -> Dict[int, RestaurantSelectionShare]:
+        """
+        Get the shares of some selections with a user (sent or taken).
+
+        Parameters:
+            db (Session): The database session.
+            selection_ids (List[int]): The selection IDs.
+            recipient_id (int): The recipient ID.
+
+        Returns:
+            Dict[int, RestaurantSelectionShare]: The shares by selection ID.
+        """
+        if not selection_ids:
+            return {}
+        shares = db.query(self._model).filter(
+            self._model.selection_id.in_(selection_ids),
+            self._model.recipient_id == recipient_id,
+        ).all()
+        return {share.selection_id: share for share in shares}
+
+    def take(self, db: Session, selection_id: int, user_id: int) -> None:
+        """
+        Take a public selection: accepted right away, even if it was sent
+        to the user and refused, or taken and removed before.
+
+        Parameters:
+            db (Session): The database session.
+            selection_id (int): The selection ID.
+            user_id (int): The user ID.
+        """
+        share = self.get_for(db, selection_id, user_id)
+        if share is None:
+            now = datetime.now()
+            db.add(self._model(
+                selection_id=selection_id,
+                recipient_id=user_id,
+                status=RestaurantSelectionShareStatus.ACCEPTED,
+                seen_at=now,
+                responded_at=now,
+            ))
+            db.commit()
+        elif share.status != RestaurantSelectionShareStatus.ACCEPTED:
+            self.answer(db, share, RestaurantSelectionShareStatus.ACCEPTED)
 
     def send(self, db: Session, selection_id: int, recipient_id: int) -> bool:
         """

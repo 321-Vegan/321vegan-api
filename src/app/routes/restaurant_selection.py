@@ -1,13 +1,17 @@
+import uuid
 from datetime import datetime, timedelta
-from typing import List, Optional, Tuple
+from pathlib import Path
+from typing import List, Literal, Optional, Tuple
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.routes.dependencies import get_current_active_user, get_pagination_params
 from app.crud import user_crud
 from app.crud.restaurant_selection import (
     KEPT_SHARE_STATUSES,
+    SORT_POPULAR,
+    SORT_RECENT,
     restaurant_selection_crud,
     restaurant_selection_share_crud,
     visible_items,
@@ -20,6 +24,7 @@ from app.models.restaurant_selection import (
     RestaurantSelectionShare,
     RestaurantSelectionShareStatus,
 )
+from app.services.s3_file_manager import s3_file_manager
 from app.schemas.restaurant import RestaurantMapOut, RestaurantPhotoOut
 from app.schemas.restaurant_selection import (
     MAX_SELECTION_RESTAURANTS,
@@ -63,9 +68,13 @@ def _summary_fields(
         "id": selection.id,
         "title": selection.title,
         "description": selection.description,
+        "owner_id": selection.user_id,
         "owner_nickname": selection.user.nickname,
         "is_owner": selection.user_id == user.id,
+        "is_public": selection.is_public,
+        "published_at": selection.published_at,
         "restaurant_ids": [item.restaurant_id for item in items],
+        "cover_path": selection.cover_path,
         "cover_photos": cover_photos,
         "created_at": selection.created_at,
         "updated_at": selection.updated_at,
@@ -282,6 +291,43 @@ def mark_received_selections_seen(
     restaurant_selection_share_crud.mark_all_seen(db, current_user.id)
 
 
+@router.get(
+    "/public",
+    response_model=RestaurantSelectionSummaryOutPaginated,
+    status_code=status.HTTP_200_OK,
+)
+def fetch_public_selections(
+    sort: Literal["recent", "popular"] = Query(default=SORT_RECENT),
+    db: Session = Depends(get_db),
+    pagination_params: Tuple[int, int] = Depends(get_pagination_params),
+    current_user: User = Depends(get_current_active_user),
+) -> RestaurantSelectionSummaryOutPaginated:
+    """
+    Fetch the public selections having a restaurant, that any user can take:
+    the most recently published first, or the most taken first (popular).
+
+    Parameters:
+        sort (str): "recent" or "popular".
+        db (Session): The database session.
+        pagination_params (Tuple[int, int]): The pagination parameters (skip, limit).
+        current_user (User): The current authenticated user.
+
+    Returns:
+        RestaurantSelectionSummaryOutPaginated: The selections with pagination data.
+    """
+    skip, size = pagination_params
+    selections, total = restaurant_selection_crud.get_public(
+        db, sort=sort, skip=skip, limit=size)
+    ids = [selection.id for selection in selections]
+    accepted = restaurant_selection_share_crud.count_accepted(db, ids)
+    shares = restaurant_selection_share_crud.get_for_many(
+        db, ids, current_user.id)
+    return _paginated([_summary_out(selection, current_user, shares.get(selection.id),
+                                    accepted_count=accepted.get(selection.id, 0))
+                       for selection in selections],
+                      total, skip, size)
+
+
 @router.post(
     "/",
     response_model=RestaurantSelectionOut,
@@ -293,7 +339,8 @@ def create_selection(
     current_user: User = Depends(get_current_active_user),
 ) -> RestaurantSelectionOut:
     """
-    Create a selection of restaurants, in the given order.
+    Create a selection of restaurants, in the given order. A public one
+    needs a restaurant.
 
     Parameters:
         selection_in (RestaurantSelectionCreate): The selection data.
@@ -309,10 +356,16 @@ def create_selection(
             detail=f"You cannot have more than {MAX_SELECTIONS_PER_USER} selections",
         )
     items = [item.model_dump() for item in selection_in.items]
+    if selection_in.is_public and not items:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Add a restaurant to the selection before publishing it",
+        )
     _check_restaurants(db, [item["restaurant_id"]
                        for item in items], current_user)
     selection = restaurant_selection_crud.create_for_user(
-        db, current_user.id, selection_in.title, selection_in.description, items)
+        db, current_user.id, selection_in.title, selection_in.description, items,
+        is_public=selection_in.is_public)
     log.info(
         f"Restaurant selection created: {selection.id} by user {current_user.id}")
     return _selection_out(selection, current_user, accepted_count=0)
@@ -329,9 +382,9 @@ def fetch_selection(
     current_user: User = Depends(get_current_active_user),
 ) -> RestaurantSelectionOut:
     """
-    Fetch a selection with its restaurants: for its owner, or a user it was
-    sent to (pending or accepted). Permanently closed restaurants are kept
-    so the app can show them as closed.
+    Fetch a selection with its restaurants: for its owner, a user it was
+    sent to (pending or accepted), or anyone when public. Permanently closed
+    restaurants are kept so the app can show them as closed.
 
     Parameters:
         id (int): The ID of the selection.
@@ -344,8 +397,13 @@ def fetch_selection(
     selection = _get_selection(db, id)
     if selection.user_id == current_user.id:
         return _owner_selection_out(db, selection, current_user)
-    share = _get_received_share(db, id, current_user)
-    return _selection_out(selection, current_user, share)
+    if not selection.is_public:
+        share = _get_received_share(db, id, current_user)
+        return _selection_out(selection, current_user, share)
+    share = restaurant_selection_share_crud.get_for(db, id, current_user.id)
+    accepted = restaurant_selection_share_crud.count_accepted(db, [selection.id])
+    return _selection_out(selection, current_user, share,
+                          accepted_count=accepted.get(selection.id, 0))
 
 
 @router.put(
@@ -362,7 +420,8 @@ def update_selection(
     """
     Update a selection (its owner only). The items, when given, replace the
     whole list: restaurants, order and notes. The users it was sent to see
-    the changes.
+    the changes. It can be made public (with a restaurant), but a public
+    selection cannot be made private again.
 
     Parameters:
         id (int): The ID of the selection.
@@ -380,9 +439,21 @@ def update_selection(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="The title cannot be empty",
         )
-    if changes.get("items") is not None:
+    if changes.get("is_public") is False and selection.is_public:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="A public selection cannot be made private",
+        )
+    items = changes.get("items")
+    publishing = changes.get("is_public") is True and not selection.is_public
+    if publishing and not (items if items is not None else selection.items):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Add a restaurant to the selection before publishing it",
+        )
+    if items is not None:
         _check_restaurants(
-            db, [item["restaurant_id"] for item in changes["items"]], current_user)
+            db, [item["restaurant_id"] for item in items], current_user)
     updated = restaurant_selection_crud.update_selection(db, selection, changes)
     log.info(
         f"Restaurant selection updated: {id} by user {current_user.id}, fields {list(changes)}")
@@ -404,7 +475,10 @@ def delete_selection(
         current_user (User): The current authenticated user.
     """
     selection = _get_own_selection(db, id, current_user)
+    cover_path = selection.cover_path
     restaurant_selection_crud.delete(db, selection)
+    if cover_path:
+        s3_file_manager.delete_file(cover_path)
     log.info(
         f"Restaurant selection deleted: {id} by user {current_user.id}")
 
@@ -534,14 +608,24 @@ def accept_selection(
     current_user: User = Depends(get_current_active_user),
 ) -> None:
     """
-    Accept a selection sent to the current user: it shows with their saved
-    restaurants. No-op when already accepted.
+    Accept a selection sent to the current user, or take a public one: it
+    shows with their saved restaurants. No-op when already accepted.
 
     Parameters:
         id (int): The ID of the selection.
         db (Session): The database session.
         current_user (User): The current authenticated user.
     """
+    selection = _get_selection(db, id)
+    if selection.is_public:
+        if selection.user_id == current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="You cannot take your own selection",
+            )
+        restaurant_selection_share_crud.take(db, id, current_user.id)
+        log.info(f"Public restaurant selection {id} taken by user {current_user.id}")
+        return
     share = _get_received_share(db, id, current_user)
     if share.status != RestaurantSelectionShareStatus.ACCEPTED:
         restaurant_selection_share_crud.answer(
@@ -566,3 +650,65 @@ def remove_received_selection(
     share = _get_received_share(db, id, current_user)
     restaurant_selection_share_crud.answer(
         db, share, RestaurantSelectionShareStatus.DECLINED)
+
+
+@router.put(
+    "/{id}/cover",
+    response_model=RestaurantSelectionOut,
+    status_code=status.HTTP_200_OK,
+)
+def set_selection_cover(
+    id: int,
+    file: UploadFile = File(...,
+                            description="Image (JPG, PNG, WebP max 5MB)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> RestaurantSelectionOut:
+    """
+    Set the cover image of a selection (its owner only), replacing the
+    previous one. It is stored in the bucket under selections/{id}/ and shown
+    right away, even on a public selection.
+
+    Parameters:
+        id (int): The ID of the selection.
+        file (UploadFile): Image file (JPG, PNG, WebP, max 5MB).
+        db (Session): The database session.
+        current_user (User): The current authenticated user.
+
+    Returns:
+        RestaurantSelectionOut: The updated selection.
+    """
+    selection = _get_own_selection(db, id, current_user)
+    file_extension = Path(file.filename or "").suffix.lower()
+    object_name = f"selections/{selection.id}/cover_{uuid.uuid4().hex}{file_extension}"
+    s3_file_manager.upload_image(object_name, file)
+    previous = restaurant_selection_crud.set_cover(db, selection, object_name)
+    if previous:
+        s3_file_manager.delete_file(previous)
+    log.info(
+        f"Restaurant selection cover set: {object_name} by user {current_user.id}")
+    return _owner_selection_out(db, selection, current_user)
+
+
+@router.delete("/{id}/cover", status_code=status.HTTP_204_NO_CONTENT)
+def remove_selection_cover(
+    id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> None:
+    """
+    Remove the cover image of a selection (its owner only): the featured
+    photos of its restaurants show instead.
+
+    Parameters:
+        id (int): The ID of the selection.
+        db (Session): The database session.
+        current_user (User): The current authenticated user.
+    """
+    selection = _get_own_selection(db, id, current_user)
+    previous = restaurant_selection_crud.set_cover(db, selection, None)
+    if previous:
+        s3_file_manager.delete_file(previous)
+        log.info(
+            f"Restaurant selection cover removed: {id} by user {current_user.id}")
+

@@ -1,6 +1,6 @@
 import enum
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, DateTime, Enum, ForeignKey, UniqueConstraint
+from sqlalchemy import Boolean, Column, Integer, String, Text, DateTime, Enum, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 from app.database.base_class import Base
 
@@ -28,6 +28,15 @@ class RestaurantSelection(Base):
     user = relationship("User")
     title = Column(String, nullable=False)
     description = Column(Text, nullable=True)
+    # Listed for every user, who can take it without it being sent to them.
+    # For good: it cannot be made private again.
+    is_public = Column(Boolean, default=False, server_default="false",
+                       nullable=False, index=True)
+    # When it was made public, to list the most recent first
+    published_at = Column(DateTime, nullable=True)
+    # Image chosen by the owner, in the bucket under selections/{id}/; the
+    # featured photos of its restaurants otherwise
+    cover_path = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.now, nullable=False)
     updated_at = Column(DateTime, default=datetime.now,
                         onupdate=datetime.now, nullable=False)
@@ -61,7 +70,10 @@ class RestaurantSelectionItem(Base):
 
 
 class RestaurantSelectionShare(Base):
-    """A selection sent to a user, and their answer."""
+    """
+    A selection sent to a user, and their answer; or a public selection the
+    user took (accepted right away).
+    """
     __tablename__ = "restaurant_selection_shares"
     __table_args__ = (
         UniqueConstraint("selection_id", "recipient_id",

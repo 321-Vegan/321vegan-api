@@ -57,16 +57,22 @@ class RestaurantSelectionCreate(RestaurantSelectionFields):
     # In the order of the selection
     items: List[RestaurantSelectionItemIn] = Field(
         [], max_length=MAX_SELECTION_RESTAURANTS)
+    # Listed for every user, for good
+    is_public: bool = False
 
 
 class RestaurantSelectionUpdate(RestaurantSelectionFields):
-    """Partial update; items, when given, replace the whole list (order included)."""
+    """
+    Partial update; items, when given, replace the whole list (order
+    included). is_public can only go to true: a public selection stays so.
+    """
     title: Optional[str] = Field(
         None, min_length=1, max_length=MAX_TITLE_LENGTH)
     description: Optional[str] = Field(
         None, max_length=MAX_DESCRIPTION_LENGTH)
     items: Optional[List[RestaurantSelectionItemIn]] = Field(
         None, max_length=MAX_SELECTION_RESTAURANTS)
+    is_public: Optional[bool] = None
 
 
 class RestaurantSelectionSend(BaseModel):
@@ -88,24 +94,34 @@ class RestaurantSelectionSendOut(BaseModel):
 
 
 class RestaurantSelectionSummaryOut(BaseModel):
-    """A selection in a list, as seen by its owner or by a recipient."""
+    """
+    A selection in a list, as seen by its owner, by a recipient, or by any
+    user when public.
+    """
     id: int
     title: str
     description: Optional[str] = None
+    owner_id: int
     owner_nickname: str
     is_owner: bool
+    is_public: bool = False
+    # When it was made public
+    published_at: Optional[datetime] = None
     # The restaurants the viewer can see, in order
     restaurant_ids: List[int] = []
+    # Image chosen by the owner (bucket path), shown instead of cover_photos
+    cover_path: Optional[str] = None
     # Featured photos of the first restaurants having one (up to 4)
     cover_photos: List[RestaurantPhotoOut] = []
-    # Recipient only: PENDING or ACCEPTED
+    # Recipient, or user who took a public one: PENDING or ACCEPTED
+    # (DECLINED when they removed a public one); null otherwise
     share_status: Optional[str] = None
     # Recipient only: false until they opened their received selections
     is_seen: bool = True
     # Recipient only: when it was sent to them
     shared_at: Optional[datetime] = None
-    # Owner only: how many users accepted it (have it with their saved
-    # restaurants)
+    # Owner, or anyone for a public one: how many users accepted or took it
+    # (have it with their saved restaurants)
     accepted_count: Optional[int] = None
     created_at: datetime
     updated_at: datetime
