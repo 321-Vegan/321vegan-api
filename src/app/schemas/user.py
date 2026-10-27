@@ -46,6 +46,9 @@ class UserOut(UserBase):
     # Use GET /me/error-reports to fetch the list
     nb_error_reports: int = 0
     nb_product_reviews: int = 0
+    nb_restaurants_validated: int = 0
+    nb_restaurants_pending: int = 0
+    nb_restaurants_rejected: int = 0
     supporter: int = 0
     subscription_bypass: bool = False
     subscription_status: Optional[str] = None
@@ -77,6 +80,34 @@ class UserOut(UserBase):
     @classmethod
     def validate_scan_count(cls, v):
         """Convert None to 0 for scan_count"""
+        return 0 if v is None else v
+
+    class Config:
+        from_attributes = True
+        json_encoders = {
+            datetime: lambda v: v.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f%z"),
+        }
+
+class UserBriefOut(BaseModel):
+    """
+    Who wrote something to moderate (restaurant, suggestion, review...) and
+    how much they contributed, without private data (moderators).
+    """
+    id: int
+    nickname: str
+    role: str
+    created_at: datetime
+    nb_products_sent: int = 0
+    nb_products_modified: int = 0
+    nb_product_reviews: int = 0
+    nb_restaurants_validated: int = 0
+    nb_restaurants_pending: int = 0
+    nb_restaurants_rejected: int = 0
+
+    @field_validator('nb_products_sent', 'nb_products_modified', mode='before')
+    @classmethod
+    def validate_counts(cls, v):
+        """Convert None to 0 for the stored counters"""
         return 0 if v is None else v
 
     class Config:

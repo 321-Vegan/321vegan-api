@@ -9,6 +9,7 @@ from app.models.subscription import SubscriptionStatus
 from app.models.checking import Checking
 from app.models.error_report import ErrorReport
 from app.models.product_review import ProductReview
+from app.models.restaurant import Restaurant
 
 
 class UserRole(str, enum.Enum):
@@ -83,13 +84,14 @@ class User(Base):
     restaurant_reviews = relationship(
         "RestaurantReview", back_populates="user")
 
-    def _count(self, model, relationship_attr) -> int:
-        """Count the user's rows of a relationship without loading them"""
+    def _count(self, model, relationship_attr, *criteria) -> int:
+        """Count the user's rows of a relationship (matching some criteria)
+        without loading them"""
         session = object_session(self)
         if session is None:
             return 0
         return session.query(func.count(model.id)).filter(
-            with_parent(self, relationship_attr)).scalar() or 0
+            with_parent(self, relationship_attr), *criteria).scalar() or 0
 
     @property
     def nb_checkings(self) -> int:
@@ -105,6 +107,27 @@ class User(Base):
     def nb_product_reviews(self) -> int:
         """Return the number of product reviews posted by the user"""
         return self._count(ProductReview, User.product_reviews)
+
+    @property
+    def nb_restaurants_validated(self) -> int:
+        """Return the number of restaurants created by the user and validated"""
+        return self._count(Restaurant, User.restaurants,
+                           Restaurant.validated.is_(True),
+                           Restaurant.date_deleted.is_(None))
+
+    @property
+    def nb_restaurants_pending(self) -> int:
+        """Return the number of restaurants created by the user, pending moderation"""
+        return self._count(Restaurant, User.restaurants,
+                           Restaurant.validated.is_(False),
+                           Restaurant.date_deleted.is_(None))
+
+    @property
+    def nb_restaurants_rejected(self) -> int:
+        """Return the number of restaurants created by the user and refused"""
+        return self._count(Restaurant, User.restaurants,
+                           Restaurant.validated.is_(False),
+                           Restaurant.date_deleted.isnot(None))
 
     @property
     def subscription_status(self):

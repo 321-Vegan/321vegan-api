@@ -13,7 +13,7 @@ from app.models.product import Product
 from app.models.user import UserRole
 from app.models.error_report import ErrorReport
 from app.models.scan_event import ScanEvent
-from app.schemas.user import FriendCodeAdminUpdate, UserCreate, UserOutPaginated, UserOut, UserUpdate, UserFilters, UserUpdateOwn, UserPatch, ScanCountIncrement, ScanCountInit, ScanCountOut
+from app.schemas.user import FriendCodeAdminUpdate, UserBriefOut, UserCreate, UserOutPaginated, UserOut, UserUpdate, UserFilters, UserUpdateOwn, UserPatch, ScanCountIncrement, ScanCountInit, ScanCountOut
 from typing import Literal
 from app.security import get_password_hash
 
@@ -180,6 +180,31 @@ def fetch_user_by_id(id: int, db: Session = Depends(get_db)):
     Raises:
         HTTPException: If the user does not have enough
             permissions to access to this endpoint.
+        HTTPException: If the user with the specified ID is not found in the database.
+    """
+    user = user_crud.get_one(db, User.id == id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User with {id} not found",
+        )
+    return user
+
+
+@router.get("/{id}/brief", response_model=UserBriefOut, status_code=status.HTTP_200_OK, dependencies=[Depends(RoleChecker(["contributor", "admin"]))])
+def fetch_user_brief(id: int, db: Session = Depends(get_db)):
+    """
+    Fetches who a user is and how much they contributed, without private
+    data, to help moderators judge what they wrote.
+
+    Parameters:
+        id (int): The ID of the user to fetch.
+        db (Session): The database session.
+
+    Returns:
+        UserBriefOut: The user's public profile and contribution counts.
+
+    Raises:
         HTTPException: If the user with the specified ID is not found in the database.
     """
     user = user_crud.get_one(db, User.id == id)
