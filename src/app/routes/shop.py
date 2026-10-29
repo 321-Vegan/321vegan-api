@@ -219,7 +219,7 @@ def update_shop(
     id: int,
     shop_in: ShopUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(RoleChecker(["admin"]))
+    current_user: User = Depends(RoleChecker(["moderator"]))
 ) -> ShopOut:
     """
     Update a shop.
@@ -259,7 +259,7 @@ def update_shop(
 def delete_shop(
     id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(RoleChecker(["admin"]))
+    current_user: User = Depends(RoleChecker(["moderator"]))
 ) -> None:
     """
     Soft-delete a shop: sets date_deleted instead of removing the row, so its

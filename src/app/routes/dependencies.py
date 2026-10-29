@@ -426,7 +426,8 @@ class RoleChecker:
             HTTPException: If the current user does not have enough privileges 
             to access to the requested endpoint.
         """
-        if user.role not in self.allowed_roles:
+        # Roles are cumulative: an admin passes a ["contributor"] check
+        if not any(user.has_role(role) for role in self.allowed_roles):
             raise _get_credential_exception(
                 status_code=status.HTTP_403_FORBIDDEN,
                 details="The user does not have enough privileges",

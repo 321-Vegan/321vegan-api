@@ -41,7 +41,7 @@ router = APIRouter(dependencies=[Depends(get_current_active_user)])
 
 
 def _is_moderator(user: User) -> bool:
-    return user.has_role(UserRole.CONTRIBUTOR)
+    return user.has_role(UserRole.MODERATOR)
 
 
 def _validation_error(e: ValidationError) -> RequestValidationError:
@@ -147,7 +147,7 @@ def _get_pending_suggestion(db: Session, id: int, user: User) -> RestaurantEditS
     "/count",
     response_model=RestaurantSuggestionOutCount,
     status_code=status.HTTP_200_OK,
-    dependencies=[Depends(RoleChecker(["contributor", "admin"]))],
+    dependencies=[Depends(RoleChecker(["moderator"]))],
 )
 def fetch_count_suggestions(
     db: Session = Depends(get_db),
@@ -351,7 +351,7 @@ def delete_suggestion(
     "/{id}/apply",
     response_model=RestaurantSuggestionOut,
     status_code=status.HTTP_200_OK,
-    dependencies=[Depends(RoleChecker(["contributor", "admin"]))],
+    dependencies=[Depends(RoleChecker(["moderator"]))],
 )
 def apply_suggestion(
     id: int,
@@ -477,7 +477,7 @@ def apply_suggestion(
     "/{id}/reject",
     response_model=RestaurantSuggestionOut,
     status_code=status.HTTP_200_OK,
-    dependencies=[Depends(RoleChecker(["contributor", "admin"]))],
+    dependencies=[Depends(RoleChecker(["moderator"]))],
 )
 def reject_suggestion(
     id: int,

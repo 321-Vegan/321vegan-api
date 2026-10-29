@@ -41,7 +41,7 @@ MAX_PHOTOS_PER_KIND = 10
 
 
 def _is_moderator(user: User) -> bool:
-    return user.has_role(UserRole.CONTRIBUTOR)
+    return user.has_role(UserRole.MODERATOR)
 
 
 def _parse_values(values: Optional[List[str]], enum_class, what: str) -> List[str]:
@@ -194,7 +194,7 @@ def fetch_restaurants_in_area(
     "/search",
     response_model=Optional[RestaurantOutPaginated],
     status_code=status.HTTP_200_OK,
-    dependencies=[Depends(RoleChecker(["contributor", "admin"]))],
+    dependencies=[Depends(RoleChecker(["moderator"]))],
 )
 def fetch_paginated_restaurants(
     filter_params: RestaurantFilters = Depends(),
@@ -419,7 +419,7 @@ def search_restaurants_by_name(
     "/photos/search",
     response_model=RestaurantPhotoOutPaginated,
     status_code=status.HTTP_200_OK,
-    dependencies=[Depends(RoleChecker(["contributor", "admin"]))],
+    dependencies=[Depends(RoleChecker(["moderator"]))],
 )
 def fetch_paginated_photos(
     filter_params: RestaurantPhotoFilters = Depends(),
@@ -470,7 +470,7 @@ def fetch_paginated_photos(
     "/photos/{photo_id}/status",
     response_model=RestaurantPhotoOut,
     status_code=status.HTTP_200_OK,
-    dependencies=[Depends(RoleChecker(["contributor", "admin"]))],
+    dependencies=[Depends(RoleChecker(["moderator"]))],
 )
 def update_photo_status(
     photo_id: int,
@@ -506,7 +506,7 @@ def update_photo_status(
     "/{id}/history",
     response_model=List[RestaurantEditOut],
     status_code=status.HTTP_200_OK,
-    dependencies=[Depends(RoleChecker(["contributor", "admin"]))],
+    dependencies=[Depends(RoleChecker(["moderator"]))],
 )
 def fetch_restaurant_history(
     id: int, db: Session = Depends(get_db)
@@ -578,7 +578,7 @@ def create_restaurant(
         db,
         restaurant_in.model_dump(),
         user_id=current_user.id,
-        validated=current_user.has_role(UserRole.ADMIN),
+        validated=_is_moderator(current_user),
     )
     log.info(
         f"Restaurant created: {restaurant.name} (ID: {restaurant.id}) by user {current_user.id}")
@@ -656,7 +656,7 @@ def delete_restaurant(
     id: int,
     delete_in: Optional[RestaurantDelete] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(RoleChecker(["admin"]))
+    current_user: User = Depends(RoleChecker(["moderator"]))
 ) -> None:
     """
     Soft-delete a restaurant: sets date_deleted instead of removing the row,

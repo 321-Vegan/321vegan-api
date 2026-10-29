@@ -13,7 +13,10 @@ from app.models.restaurant import Restaurant
 
 
 class UserRole(str, enum.Enum):
+    # From the most to the least privileged: each role has the ones after it
     ADMIN = "admin"
+    # Contributor who also manages the places (restaurants, shops)
+    MODERATOR = "moderator"
     CONTRIBUTOR = "contributor"
     USER = "user"
 
