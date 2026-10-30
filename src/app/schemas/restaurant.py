@@ -310,6 +310,17 @@ class RestaurantPhotoKindUpdate(BaseModel):
     kind: RestaurantPhotoKind
 
 
+class RestaurantLockOut(BaseModel):
+    """The moderator holding the validation lock of a restaurant."""
+    locked_by: str
+    locked_at: datetime
+
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f%z"),
+        }
+
+
 class RestaurantBriefOut(BaseModel):
     id: int
     name: str

@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
@@ -10,12 +11,14 @@ from sqlalchemy.orm import Session
 
 from app.routes.dependencies import get_current_active_user, get_pagination_params, get_sort_by_params, RoleChecker
 from app.crud.restaurant import restaurant_crud, restaurant_photo_crud, restaurant_save_crud
+from app.crud.restaurant_lock import restaurant_lock_crud
 from app.database.db import get_db
 from app.log import get_logger
 from app.models import User
 from app.models.user import UserRole
 from app.models.restaurant import Restaurant, RestaurantServiceOption, RestaurantTag, RestaurantVeganStatus
 from app.models.restaurant_photo import RestaurantPhoto, RestaurantPhotoKind, RestaurantPhotoStatus
+from app.models.restaurant_lock import RestaurantLock
 from app.services.s3_file_manager import s3_file_manager
 from app.schemas.restaurant import (
     compute_restaurant_change,
@@ -32,6 +35,7 @@ from app.schemas.restaurant import (
     RestaurantPhotoFilters,
     RestaurantPhotoStatusUpdate,
     RestaurantPhotoKindUpdate,
+    RestaurantLockOut,
 )
 
 log = get_logger(__name__)
@@ -43,6 +47,26 @@ MAX_PHOTOS_PER_KIND = 10
 
 def _is_moderator(user: User) -> bool:
     return user.has_role(UserRole.MODERATOR)
+
+
+def _lock_out(lock: RestaurantLock) -> RestaurantLockOut:
+    return RestaurantLockOut(locked_by=lock.user.nickname, locked_at=lock.locked_at)
+
+
+def _check_lock(db: Session, restaurant: Restaurant, user: User) -> None:
+    """
+    Raise a 423 error, with the lock as detail, when another moderator holds
+    a live validation lock on the restaurant. The lock only concerns
+    moderators: a creator editing their pending restaurant is never blocked.
+    """
+    if not _is_moderator(user):
+        return
+    lock = restaurant_lock_crud.get_live_lock(db, restaurant)
+    if lock and lock.user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_423_LOCKED,
+            detail=jsonable_encoder(_lock_out(lock)),
+        )
 
 
 def _parse_values(values: Optional[List[str]], enum_class, what: str) -> List[str]:
@@ -661,6 +685,7 @@ def update_restaurant(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only moderators can edit a validated restaurant: suggest a change instead",
         )
+    _check_lock(db, restaurant, current_user)
 
     changes = restaurant_in.model_dump(exclude_unset=True)
     validated = changes.pop('validated', None)
@@ -687,6 +712,8 @@ def update_restaurant(
 
     updated_restaurant = restaurant_crud.update_with_history(
         db, restaurant, values, before, after, user_id=current_user.id)
+    # The work is done: release the user's lock
+    restaurant_lock_crud.unlock(db, updated_restaurant, current_user)
     log.info(
         f"Restaurant updated: {updated_restaurant.name} (ID: {id}) by user {current_user.id}, fields {list(values)}")
     return _restaurant_out(updated_restaurant, current_user, db)
@@ -695,12 +722,13 @@ def update_restaurant(
 @router.delete(
     "/{id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(RoleChecker(["moderator"]))],
 )
 def delete_restaurant(
     id: int,
     delete_in: Optional[RestaurantDelete] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(RoleChecker(["moderator"]))
+    current_user: User = Depends(get_current_active_user),
 ) -> None:
     """
     Soft-delete a restaurant: sets date_deleted instead of removing the row,
@@ -718,12 +746,87 @@ def delete_restaurant(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Restaurant not found"
         )
+    _check_lock(db, restaurant, current_user)
 
     reason = None
     if not restaurant.validated and delete_in is not None:
         reason = (delete_in.rejection_reason or "").strip() or None
     restaurant_crud.soft_delete(db, restaurant, rejection_reason=reason)
+    restaurant_lock_crud.unlock(db, restaurant, current_user)
     log.info(f"Restaurant soft-deleted: ID {id}")
+
+
+@router.post(
+    "/{id}/lock",
+    response_model=RestaurantLockOut,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(RoleChecker(["moderator"]))],
+)
+def lock_restaurant(
+    id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> RestaurantLockOut:
+    """
+    Take or renew the validation lock of a restaurant, so that two
+    moderators don't work on it at the same time. The lock expires after
+    RESTAURANT_LOCK_DURATION without being renewed.
+
+    Parameters:
+        id (int): The ID of the restaurant to lock.
+        db (Session): The database session.
+        current_user (User): The current moderator user.
+
+    Returns:
+        RestaurantLockOut: The lock taken by the user.
+
+    Raises:
+        HTTPException: If the restaurant is not found.
+        HTTPException: If another user holds a live lock (423),
+            with this lock as detail.
+    """
+    restaurant = restaurant_crud.get_by_id(db, id)
+    if restaurant is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Restaurant not found"
+        )
+    lock = restaurant_lock_crud.lock(db, restaurant, current_user)
+    if lock.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_423_LOCKED,
+            detail=jsonable_encoder(_lock_out(lock)),
+        )
+    return _lock_out(lock)
+
+
+@router.delete(
+    "/{id}/lock",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(RoleChecker(["moderator"]))],
+)
+def unlock_restaurant(
+    id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> None:
+    """
+    Release the validation lock of a restaurant. Does nothing if the lock is
+    held by another user.
+
+    Parameters:
+        id (int): The ID of the restaurant to unlock.
+        db (Session): The database session.
+        current_user (User): The current moderator user.
+
+    Raises:
+        HTTPException: If the restaurant is not found.
+    """
+    restaurant = restaurant_crud.get_by_id(db, id)
+    if restaurant is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Restaurant not found"
+        )
+    restaurant_lock_crud.unlock(db, restaurant, current_user)
 
 
 @router.post(

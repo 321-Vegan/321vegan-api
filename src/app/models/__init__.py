@@ -29,3 +29,4 @@ from app.models.restaurant_save import RestaurantSave
 from app.models.restaurant_selection import RestaurantSelection, RestaurantSelectionItem, RestaurantSelectionShare, RestaurantSelectionShareStatus
 from app.models.product_edit import ProductEdit
 from app.models.product_lock import ProductLock
+from app.models.restaurant_lock import RestaurantLock
