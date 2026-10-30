@@ -31,6 +31,7 @@ from app.schemas.restaurant import (
     RestaurantPhotoOutPaginated,
     RestaurantPhotoFilters,
     RestaurantPhotoStatusUpdate,
+    RestaurantPhotoKindUpdate,
 )
 
 log = get_logger(__name__)
@@ -499,6 +500,49 @@ def update_photo_status(
     updated_photo = restaurant_photo_crud.update(db, photo, status_in)
     log.info(
         f"Restaurant photo {photo_id} status updated to {status_in.status} by moderator {current_user.id}")
+    return updated_photo
+
+
+@router.patch(
+    "/photos/{photo_id}/kind",
+    response_model=RestaurantPhotoOut,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(RoleChecker(["moderator"]))],
+)
+def update_photo_kind(
+    photo_id: int,
+    kind_in: RestaurantPhotoKindUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> RestaurantPhotoOut:
+    """
+    Move a place photo to the menu photos or the other way round, when it was
+    sent in the wrong one (moderators only). Its file keeps its path.
+
+    Parameters:
+        photo_id (int): The photo ID.
+        kind_in (RestaurantPhotoKindUpdate): The new kind.
+        db (Session): The database session.
+        current_user (User): The current moderator user.
+
+    Returns:
+        RestaurantPhotoOut: The updated photo.
+    """
+    photo = restaurant_photo_crud.get_by_id(db, photo_id)
+    if photo is None or photo.review_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Photo not found"
+        )
+    if photo.kind == kind_in.kind:
+        return photo
+    if restaurant_photo_crud.count_for_kind(db, photo.restaurant_id, kind_in.kind) >= MAX_PHOTOS_PER_KIND:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"A restaurant cannot have more than {MAX_PHOTOS_PER_KIND} photos of this kind",
+        )
+    updated_photo = restaurant_photo_crud.update(db, photo, kind_in)
+    log.info(
+        f"Restaurant photo {photo_id} kind updated to {kind_in.kind} by moderator {current_user.id}")
     return updated_photo
 
 

@@ -2,7 +2,7 @@ from datetime import date, datetime, timezone
 from typing import List, NamedTuple, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from app.models.restaurant import RestaurantVeganStatus, RestaurantOperatingStatus, RestaurantTag, RestaurantServiceOption
-from app.models.restaurant_photo import RestaurantPhotoStatus
+from app.models.restaurant_photo import RestaurantPhotoKind, RestaurantPhotoStatus
 
 TIME_PATTERN = r"^([01]\d|2[0-3]):[0-5]\d$"
 MINUTES_PER_DAY = 24 * 60
@@ -304,6 +304,10 @@ class RestaurantPhotoOut(BaseModel):
 
 class RestaurantPhotoStatusUpdate(BaseModel):
     status: RestaurantPhotoStatus
+
+
+class RestaurantPhotoKindUpdate(BaseModel):
+    kind: RestaurantPhotoKind
 
 
 class RestaurantBriefOut(BaseModel):
