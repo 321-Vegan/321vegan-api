@@ -92,14 +92,24 @@ def fetch_paginated_products(
     """
     page, size = pagination_params
     sortby, descending = orderby_params
-    products, total = product_crud.get_many(
-        db,
-        skip=page,
-        limit=size,
-        order_by=sortby,
-        descending=descending,
-        **filter_params.model_dump(exclude_none=True)
-    )
+
+    # check if `name__lookalike` is in query
+    filter_dict = filter_params.model_dump(exclude_none=True)
+    if "brand___name__lookalike" in filter_dict:
+        brand_name = filter_dict.pop("brand___name__lookalike")
+        products, total = product_crud.get_many_ranked(
+            db, 'brand_name', brand_name, skip=page, limit=size, **filter_dict
+        )
+        log.debug(f"get products based on brand_name -> {products}")
+    else:
+        products, total = product_crud.get_many(
+            db,
+            skip=page,
+            limit=size,
+            order_by=sortby,
+            descending=descending,
+            **filter_params.model_dump(exclude_none=True)
+        )
     pages = (total + size - 1) // size
     return {
         "items": products,
