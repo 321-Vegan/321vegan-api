@@ -62,14 +62,24 @@ def fetch_paginated_brands(
     """
     page, size = pagination_params
     sortby, descending = orderby_params
-    brands, total = brand_crud.get_many(
-        db,
-        skip=page,
-        limit=size,
-        order_by=sortby,
-        descending=descending,
-        **filter_params.model_dump(exclude_none=True)
-    )
+
+    # check if `name__lookalike` is in query
+    filter_dict = filter_params.model_dump(exclude_none=True)
+    if "name__lookalike" in filter_dict:
+        name = filter_dict.pop("name__lookalike")
+        brands, total = brand_crud.get_many_ranked(
+            db, 'name', name, skip=page, limit=size, **filter_dict
+        )
+    else:
+        brands, total = brand_crud.get_many(
+            db,
+            skip=page,
+            limit=size,
+            order_by=sortby,
+            descending=descending,
+            **filter_dict
+        )
+
     pages = (total + size - 1) // size
     return {
         "items": brands,
