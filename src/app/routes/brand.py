@@ -47,29 +47,41 @@ def fetch_paginated_brands(
     filter_params: BrandFilters = Depends()
 ) -> Optional[BrandOutPaginated]:
     """
-    Fetch many brands.
+    Fetch a paginated list of brands with optional filters.
 
-    This function fetches all brands from the
-    database based on the pagination parameters.
+    This function fetches all brands from the database based on the pagination parameters.
+    If the `name__lookalike` filter is provided, brands are first ranked by similarity to the name.
+    All other filters are applied in memory after retrieving the results from the database.
 
     Parameters:
         db (Session): The database session.
         pagination_params (Tuple[int, int]): The pagination parameters (skip, limit).
         orderby_params (Tuple[str, bool]): The order by parameters (sortby, descending).
+        filter_params (BrandFilters): The filters to apply to the brands.
 
     Returns:
         BrandOutPaginated: The list of brands fetched from the database with pagination datas.
     """
     page, size = pagination_params
     sortby, descending = orderby_params
-    brands, total = brand_crud.get_many(
-        db,
-        skip=page,
-        limit=size,
-        order_by=sortby,
-        descending=descending,
-        **filter_params.model_dump(exclude_none=True)
-    )
+
+    # check if `name__lookalike` is in query
+    filter_dict = filter_params.model_dump(exclude_none=True)
+    if "name__lookalike" in filter_dict:
+        name = filter_dict.pop("name__lookalike")
+        brands, total = brand_crud.get_many_ranked(
+            db, 'name', name, skip=page, limit=size, **filter_dict
+        )
+    else:
+        brands, total = brand_crud.get_many(
+            db,
+            skip=page,
+            limit=size,
+            order_by=sortby,
+            descending=descending,
+            **filter_dict
+        )
+
     pages = (total + size - 1) // size
     return {
         "items": brands,
