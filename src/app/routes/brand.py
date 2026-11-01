@@ -50,8 +50,9 @@ def fetch_paginated_brands(
     Fetch a paginated list of brands with optional filters.
 
     This function fetches all brands from the database based on the pagination parameters.
-    If the `name__lookalike` filter is provided, brands are first ranked by similarity to the name.
-    All other filters are applied in memory after retrieving the results from the database.
+    If the `name__lookalike` filter is provided, brands are ranked by similarity to the name
+    (exact > prefix > contains > fuzzy) and the order by parameters are ignored.
+    All other filters are applied in the database query.
 
     Parameters:
         db (Session): The database session.

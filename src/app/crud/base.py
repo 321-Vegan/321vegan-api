@@ -267,7 +267,8 @@ class CRUDRepository:
         total = query.count()
         items = (
             query
-            .order_by(rank, col)
+            # id as tiebreaker: keeps pagination stable when names are equal
+            .order_by(rank, col, self._model.id)
             .offset(skip)
             .limit(limit)
             .all()

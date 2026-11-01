@@ -92,8 +92,9 @@ def fetch_paginated_products(
     """
     Fetch a paginated list of products with optional filters.
 
-    If the `brand___name__lookalike` filter is provided, products are first ranked by similarity to the brand name.
-    All other filters are applied in memory after retrieving the results from the database.
+    If the `brand___name__lookalike` filter is provided, products are ranked by similarity to the brand name
+    (exact > prefix > contains > fuzzy) and the order by parameters are ignored.
+    All other filters are applied in the database query.
 
     Parameters:
         db (Session): The database session.
@@ -112,7 +113,7 @@ def fetch_paginated_products(
     page, size = pagination_params
     sortby, descending = orderby_params
 
-    # check if `name__lookalike` is in query
+    # check if `brand___name__lookalike` is in query
     filter_dict = filter_params.model_dump(exclude_none=True)
     if "brand___name__lookalike" in filter_dict:
         brand_name = filter_dict.pop("brand___name__lookalike")
