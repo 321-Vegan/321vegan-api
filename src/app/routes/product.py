@@ -77,18 +77,24 @@ def fetch_paginated_products(
     filter_params: ProductFilters = Depends(),
 ) -> Optional[ProductOutPaginated]:
     """
-    Fetch many products.
+    Fetch a paginated list of products with optional filters.
 
-    This function fetches all products from the
-    database based on the pagination parameters.
+    If the `brand___name__lookalike` filter is provided, products are first ranked by similarity to the brand name.
+    All other filters are applied in memory after retrieving the results from the database.
 
     Parameters:
         db (Session): The database session.
         pagination_params (Tuple[int, int]): The pagination parameters (skip, limit).
         orderby_params (Tuple[str, bool]): The order by parameters (sortby, descending).
+        filter_params (ProductFilters): The filters to apply to the products.
 
     Returns:
-        Optional[ProductOutPaginated]: The list of products fetched from the database with pagination datas.
+        Optional[ProductOutPaginated]: A paginated list of products, including:
+            - `items`: The list of products for the current page.
+            - `total`: The total number of products after filtering.
+            - `page`: The current page number.
+            - `size`: The number of items per page.
+            - `pages`: The total number of pages.
     """
     page, size = pagination_params
     sortby, descending = orderby_params
@@ -100,7 +106,6 @@ def fetch_paginated_products(
         products, total = product_crud.get_many_ranked(
             db, 'brand_name', brand_name, skip=page, limit=size, **filter_dict
         )
-        log.debug(f"get products based on brand_name -> {products}")
     else:
         products, total = product_crud.get_many(
             db,
