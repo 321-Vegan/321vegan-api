@@ -9,7 +9,7 @@ from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.routes.dependencies import get_current_active_user, get_pagination_params, get_sort_by_params, RoleChecker
+from app.routes.dependencies import get_admin_or_client, get_current_active_user, get_pagination_params, get_sort_by_params, RoleChecker
 from app.crud.restaurant import restaurant_crud, restaurant_photo_crud, restaurant_save_crud
 from app.crud.restaurant_lock import restaurant_lock_crud
 from app.database.db import get_db
@@ -41,6 +41,8 @@ from app.schemas.restaurant import (
 log = get_logger(__name__)
 
 router = APIRouter(dependencies=[Depends(get_current_active_user)])
+# The website, showing a restaurant to anyone with its link
+website_router = APIRouter(dependencies=[Depends(get_admin_or_client)])
 
 MAX_PHOTOS_PER_KIND = 10
 
@@ -109,31 +111,33 @@ def _get_visible_restaurant(db: Session, id: int, user: User) -> Restaurant:
 
 def _restaurant_out(
     restaurant: Restaurant,
-    user: User,
+    user: Optional[User],
     db: Session,
     saved_ids: Optional[set] = None,
 ) -> RestaurantOut:
     """
     Restaurant as seen by the user: approved place and menu photos plus the
     user's own pending ones (all of them for moderators), no address for a
-    caterer without storefront, and whether the user saved it.
+    caterer without storefront, and whether the user saved it. Without a
+    user (website): approved photos only, never saved.
 
     Parameters:
         saved_ids (Optional[set]): The restaurants saved by the user, when
             already known (lists); looked up otherwise.
     """
+    user_id = user.id if user else None
     if saved_ids is None:
         saved_ids = restaurant_save_crud.get_saved_ids(
-            db, user.id, [restaurant.id])
+            db, user_id, [restaurant.id]) if user else set()
     out = RestaurantOut.model_validate(restaurant)
-    is_moderator = _is_moderator(user)
-    is_creator = restaurant.created_by == user.id
+    is_moderator = user is not None and _is_moderator(user)
+    is_creator = user_id is not None and restaurant.created_by == user_id
     photos = [
         photo for photo in out.photos
         if photo.review_id is None and (
             is_moderator
             or photo.status == RestaurantPhotoStatus.APPROVED
-            or photo.user_id == user.id
+            or (user_id is not None and photo.user_id == user_id)
         )
     ]
     update = {"photos": photos, "is_saved": restaurant.id in saved_ids}
@@ -619,6 +623,34 @@ def fetch_restaurant_by_id(
     """
     restaurant = _get_visible_restaurant(db, id, current_user)
     return _restaurant_out(restaurant, current_user, db)
+
+
+@website_router.get(
+    "/{id}",
+    response_model=RestaurantOut,
+    status_code=status.HTTP_200_OK,
+)
+def fetch_website_restaurant(
+    id: int,
+    db: Session = Depends(get_db),
+) -> RestaurantOut:
+    """
+    Fetch a validated restaurant with its approved photos, for the website
+    page its link opens when the app isn't installed.
+
+    Parameters:
+        id (int): The ID of the restaurant.
+        db (Session): The database session.
+
+    Returns:
+        RestaurantOut: The restaurant.
+    """
+    restaurant = restaurant_crud.get_by_id(db, id)
+    if restaurant is None or not restaurant.validated:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Restaurant not found"
+        )
+    return _restaurant_out(restaurant, None, db)
 
 
 @router.post(

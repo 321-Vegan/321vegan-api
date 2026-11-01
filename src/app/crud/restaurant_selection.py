@@ -22,14 +22,18 @@ SORT_RECENT = "recent"
 SORT_POPULAR = "popular"
 
 
-def is_restaurant_visible(restaurant: Restaurant, user_id: int) -> bool:
-    """Same rule as the saved restaurants: validated, or created by the user."""
+def is_restaurant_visible(restaurant: Restaurant, user_id: Optional[int]) -> bool:
+    """
+    Same rule as the saved restaurants: validated, or created by the user.
+    Validated only without a user (website).
+    """
     return restaurant.date_deleted is None and (
-        restaurant.validated or restaurant.created_by == user_id)
+        restaurant.validated
+        or (user_id is not None and restaurant.created_by == user_id))
 
 
-def visible_items(selection: RestaurantSelection, user_id: int) -> List[RestaurantSelectionItem]:
-    """The items of a selection the user can see, in order."""
+def visible_items(selection: RestaurantSelection, user_id: Optional[int]) -> List[RestaurantSelectionItem]:
+    """The items of a selection the user (or the website, None) can see, in order."""
     return [item for item in selection.items
             if is_restaurant_visible(item.restaurant, user_id)]
 

@@ -6,7 +6,7 @@ from typing import List, Literal, Optional, Tuple
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
-from app.routes.dependencies import get_current_active_user, get_pagination_params
+from app.routes.dependencies import get_admin_or_client, get_current_active_user, get_pagination_params
 from app.crud import user_crud
 from app.crud.restaurant_selection import (
     KEPT_SHARE_STATUSES,
@@ -42,6 +42,8 @@ from app.schemas.restaurant_selection import (
 log = get_logger(__name__)
 
 router = APIRouter(dependencies=[Depends(get_current_active_user)])
+# The website, showing a public selection to anyone with its link
+website_router = APIRouter(dependencies=[Depends(get_admin_or_client)])
 
 MAX_SELECTIONS_PER_USER = 50
 MAX_COVER_PHOTOS = 4
@@ -51,15 +53,16 @@ MAX_SENDS_PER_DAY = 30
 
 def _summary_fields(
     selection: RestaurantSelection,
-    user: User,
+    user: Optional[User],
     share: Optional[RestaurantSelectionShare] = None,
     accepted_count: Optional[int] = None,
 ) -> dict:
     """
     Fields of a selection as seen by the user: its owner (with
-    accepted_count), or the recipient of share.
+    accepted_count), the recipient of share, or the website (no user).
     """
-    items = visible_items(selection, user.id)
+    user_id = user.id if user else None
+    items = visible_items(selection, user_id)
     cover_photos = [
         RestaurantPhotoOut.model_validate(item.restaurant.featured_photo)
         for item in items if item.restaurant.featured_photo is not None
@@ -70,7 +73,7 @@ def _summary_fields(
         "description": selection.description,
         "owner_id": selection.user_id,
         "owner_nickname": selection.user.nickname,
-        "is_owner": selection.user_id == user.id,
+        "is_owner": selection.user_id == user_id,
         "is_public": selection.is_public,
         "published_at": selection.published_at,
         "restaurant_ids": [item.restaurant_id for item in items],
@@ -110,17 +113,17 @@ def _owner_selection_out(
 def _selection_out(
     db: Session,
     selection: RestaurantSelection,
-    user: User,
+    user: Optional[User],
     share: Optional[RestaurantSelectionShare] = None,
     accepted_count: Optional[int] = None,
 ) -> RestaurantSelectionOut:
     """
-    The selection with its restaurants the user can see, in order, and the
-    review its author left on each (rating and ID).
+    The selection with its restaurants the user (or the website, no user)
+    can see, in order, and the review its author left on each (rating and ID).
     """
     reviews = restaurant_selection_crud.get_author_reviews(db, selection)
     items = []
-    for item in visible_items(selection, user.id):
+    for item in visible_items(selection, user.id if user else None):
         review_id, rating = reviews.get(item.restaurant_id, (None, None))
         items.append(RestaurantSelectionItemOut(
             restaurant=RestaurantMapOut.model_validate(item.restaurant),
@@ -412,6 +415,36 @@ def fetch_selection(
     share = restaurant_selection_share_crud.get_for(db, id, current_user.id)
     accepted = restaurant_selection_share_crud.count_accepted(db, [selection.id])
     return _selection_out(db, selection, current_user, share,
+                          accepted_count=accepted.get(selection.id, 0))
+
+
+@website_router.get(
+    "/{id}",
+    response_model=RestaurantSelectionOut,
+    status_code=status.HTTP_200_OK,
+)
+def fetch_website_selection(
+    id: int,
+    db: Session = Depends(get_db),
+) -> RestaurantSelectionOut:
+    """
+    Fetch a public selection with its validated restaurants, for the website
+    page its link opens when the app isn't installed.
+
+    Parameters:
+        id (int): The ID of the selection.
+        db (Session): The database session.
+
+    Returns:
+        RestaurantSelectionOut: The selection.
+    """
+    selection = _get_selection(db, id)
+    if not selection.is_public:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Selection not found"
+        )
+    accepted = restaurant_selection_share_crud.count_accepted(db, [selection.id])
+    return _selection_out(db, selection, None,
                           accepted_count=accepted.get(selection.id, 0))
 
 
