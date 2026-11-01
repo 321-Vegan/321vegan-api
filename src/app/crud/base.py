@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session, RelationshipProperty, aliased
 from app.models import Base
 from app.security import get_password_hash
 from app.log import get_logger
-from app.crud.filters import buildQueryFilters
+from app.crud.filters import buildQueryFilters, RELATION_SPLITTER
 
 ORMModel = TypeVar("ORMModel")
 CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
@@ -231,7 +231,9 @@ class CRUDRepository:
 
         Parameters:
             db (Session): The database session.
-            search_field (str): The model field to search on.
+            search_field (str): The model field to search on, or a relationship
+                field like 'brand___name' (joined, so the ranking is computed
+                on the related table rows).
             search_term (str): The search string typed by the user.
             skip (int): Number of records to skip.
             limit (int): Maximum number of records to retrieve.
@@ -240,7 +242,15 @@ class CRUDRepository:
         Returns:
             Tuple[List[ORMModel], int]: Ranked records and total count.
         """
-        col = getattr(self._model, search_field)
+        query = db.query(self._model)
+        if RELATION_SPLITTER in search_field:
+            relation_field, search_field = search_field.split(RELATION_SPLITTER, 1)
+            relationship = getattr(self._model, relation_field)
+            r_class = aliased(relationship.property.mapper.class_)
+            query = query.join(r_class, relationship)
+            col = getattr(r_class, search_field)
+        else:
+            col = getattr(self._model, search_field)
         term = search_term.strip().lower()
         col_lower = func.lower(func.trim(col))
 
@@ -259,7 +269,7 @@ class CRUDRepository:
             else_=4,
         )
 
-        query = db.query(self._model).filter(
+        query = query.filter(
             or_(exact, prefix, contains, fuzzy_score >= 0.4)
         )
         query = buildQueryFilters(self._model, query, extra_filters)

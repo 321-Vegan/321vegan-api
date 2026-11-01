@@ -118,7 +118,7 @@ def fetch_paginated_products(
     if "brand___name__lookalike" in filter_dict:
         brand_name = filter_dict.pop("brand___name__lookalike")
         products, total = product_crud.get_many_ranked(
-            db, 'brand_name', brand_name, skip=page, limit=size, **filter_dict
+            db, 'brand___name', brand_name, skip=page, limit=size, **filter_dict
         )
     else:
         products, total = product_crud.get_many(
