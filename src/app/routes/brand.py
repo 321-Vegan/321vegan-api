@@ -47,15 +47,17 @@ def fetch_paginated_brands(
     filter_params: BrandFilters = Depends()
 ) -> Optional[BrandOutPaginated]:
     """
-    Fetch many brands.
+    Fetch a paginated list of brands with optional filters.
 
-    This function fetches all brands from the
-    database based on the pagination parameters.
+    This function fetches all brands from the database based on the pagination parameters.
+    If the `name__lookalike` filter is provided, brands are first ranked by similarity to the name.
+    All other filters are applied in memory after retrieving the results from the database.
 
     Parameters:
         db (Session): The database session.
         pagination_params (Tuple[int, int]): The pagination parameters (skip, limit).
         orderby_params (Tuple[str, bool]): The order by parameters (sortby, descending).
+        filter_params (BrandFilters): The filters to apply to the brands.
 
     Returns:
         BrandOutPaginated: The list of brands fetched from the database with pagination datas.
