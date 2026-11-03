@@ -9,7 +9,7 @@ class B12IntakeBase(BaseModel):
     intake_date: date
     user_id: int
     # Rhythm in effect when the intake was taken (daily, weekly,
-    # twice_weekly, biweekly); needed to compare intakes fairly across
+    # twice_weekly, biweekly, monthly); needed to compare intakes fairly across
     # users with different dosage schemes.
     frequency: Optional[B12IntakeFrequency] = None
 

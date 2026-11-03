@@ -8,7 +8,8 @@ from app.database.base_class import Base
 class B12IntakeFrequency(str, enum.Enum):
     """The user's supplementation rhythm when the intake was recorded.
 
-    B12 dosage schemes differ (daily, weekly, twice weekly, biweekly), so a
+    B12 dosage schemes differ (daily, weekly, twice weekly, biweekly,
+    monthly), so a
     raw intake count is not comparable between users. Snapshotting the
     frequency on each intake lets consumers (e.g. the future XP system) apply
     per-frequency rules, such as the expected gap between intakes.
@@ -17,6 +18,7 @@ class B12IntakeFrequency(str, enum.Enum):
     WEEKLY = "weekly"
     TWICE_WEEKLY = "twice_weekly"
     BIWEEKLY = "biweekly"
+    MONTHLY = "monthly"
 
 
 class B12Intake(Base):
