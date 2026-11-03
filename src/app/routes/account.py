@@ -1,3 +1,4 @@
+from datetime import date
 from typing import List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -217,6 +218,36 @@ def fetch_my_b12_intakes(
         List[B12IntakeOut]: The current user's B12 intakes.
     """
     return b12_intake_crud.get_by_user(db, active_user.id)
+
+
+@router.delete(
+    "/b12-intakes/{intake_date}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_my_b12_intake(
+    intake_date: date,
+    db: Session = Depends(get_db),
+    active_user: User = Depends(get_current_active_user),
+):
+    """
+    Delete the current user's B12 intake of a given day, so a day marked
+    by mistake from the app's history calendar can be corrected.
+
+    Parameters:
+        intake_date (date): The intake day (YYYY-MM-DD).
+        db (Session): The database session.
+        active_user (User): The current active user.
+
+    Raises:
+        HTTPException: 404 if no intake is recorded for that day.
+    """
+    intake = b12_intake_crud.get_by_user_and_date(db, active_user.id, intake_date)
+    if intake is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No B12 intake recorded on {intake_date}",
+        )
+    b12_intake_crud.delete(db, intake)
 
 
 @router.patch("/password", status_code=status.HTTP_200_OK)
