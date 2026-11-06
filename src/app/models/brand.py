@@ -15,6 +15,7 @@ class Brand(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
     name = Column(String, unique=True, index=True, nullable=False)
     email = Column(String, nullable=True)
+    contact_form_url = Column(String, nullable=True)
     logo_path = Column(String, nullable=True)
     boycott = Column(Boolean, default=False, nullable=True)
     background = Column(Text)
