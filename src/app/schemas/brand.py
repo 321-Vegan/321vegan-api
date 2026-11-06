@@ -9,6 +9,8 @@ class Brand(BaseModel):
     name: str
     email: Optional[EmailStr] = None
     root_email: Optional[EmailStr] = None
+    contact_form_url: Optional[str] = None
+    root_contact_form_url: Optional[str] = None
     boycott: Optional[bool] = False
     background: Optional[str] = None
 
@@ -50,6 +52,7 @@ class BrandOut(BaseModel):
     email: Optional[EmailStr] = None
     root_email: Optional[EmailStr] = None
     contact_form_url: Optional[str] = None
+    root_contact_form_url: Optional[str] = None
     logo_path: Optional[str] = None
     boycott: Optional[bool] = False
     parent: Optional[Brand] = None

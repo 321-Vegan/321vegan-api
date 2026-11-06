@@ -35,6 +35,12 @@ class Brand(Base):
         return self.email
 
     @property
+    def root_contact_form_url(self) -> str | None:
+        if self.contact_form_url is None and self.parent:
+            return self.parent.root_contact_form_url
+        return self.contact_form_url
+
+    @property
     def parent_name_tree(self) -> list:
         if self.parent:
             return [self.name] + self.parent.parent_name_tree
