@@ -1,5 +1,6 @@
 import enum
 from typing import List, Optional
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 from app.log import get_logger
 from app.crud.base import CRUDRepository
@@ -59,6 +60,56 @@ def _add_history(
         before=before,
         after=after,
     ))
+
+
+def brand_contact_clause(contact: str):
+    """
+    Builds a SQL clause filtering products on how their brand can be contacted.
+
+    Mirrors Brand.root_email / Brand.root_contact_form_url: a brand without its
+    own email or contact form inherits its parent's, at any depth.
+
+    Parameters:
+        contact (str): "email" (an email is available), "form" (a contact form
+            is available) or "none" (neither, products without a brand included).
+
+    Returns:
+        The SQLAlchemy clause to filter Product queries with.
+    """
+    brands = Brand.__table__
+    # Every brand paired with itself and each of its ancestors.
+    # UNION (not UNION ALL) ends the recursion even if parents form a cycle.
+    lineage = select(
+        brands.c.id.label("brand_id"),
+        brands.c.id.label("ancestor_id"),
+    ).cte("brand_lineage", recursive=True)
+    lineage = lineage.union(
+        select(lineage.c.brand_id, brands.c.parent_id)
+        .select_from(lineage.join(brands, brands.c.id == lineage.c.ancestor_id))
+        .where(brands.c.parent_id.is_not(None))
+    )
+    ancestor = brands.alias("contact_ancestor")
+
+    def lineage_has(column_name: str):
+        column = ancestor.c[column_name]
+        return (
+            select(lineage.c.brand_id)
+            .select_from(lineage.join(ancestor, ancestor.c.id == lineage.c.ancestor_id))
+            .where(
+                lineage.c.brand_id == Product.brand_id,
+                column.is_not(None),
+                column != "",
+            )
+            .exists()
+        )
+
+    if contact == "email":
+        return lineage_has("email")
+    if contact == "form":
+        return lineage_has("contact_form_url")
+    if contact == "none":
+        return ~or_(lineage_has("email"), lineage_has("contact_form_url"))
+    raise ValueError(f"Unknown brand contact filter: {contact}")
 
 
 class ProductCRUDRepository(CRUDRepository):

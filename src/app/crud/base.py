@@ -2,7 +2,7 @@
 This module contains the base interface for CRUD 
 (Create, Read, Update, Delete) operations.
 """
-from typing import List, Optional, Type, TypeVar, Tuple
+from typing import List, Optional, Sequence, Type, TypeVar, Tuple
 
 from pydantic import BaseModel
 from sqlalchemy import Float, desc, asc, func, case, or_
@@ -169,7 +169,8 @@ class CRUDRepository:
         return self._query(db).all()
 
     def get_many(
-        self, db: Session, *args, skip: int = 0, limit: int = 100, order_by: str = 'created_at', descending: bool = False, **kwargs
+        self, db: Session, *args, skip: int = 0, limit: int = 100, order_by: str = 'created_at', descending: bool = False,
+        clauses: Sequence = (), **kwargs
     ) -> Tuple[List[ORMModel], int]:
         """
         Retrieves multiple records from the database.
@@ -183,6 +184,8 @@ class CRUDRepository:
                 Defaults to 100.
             order_by (str, optional): Field name to order by. Default to 'created_at'.
             descending (bool, optional): Sort direction. Default to False.
+            clauses (Sequence, optional): Extra SQLAlchemy filter clauses, for
+                filters that can't be expressed as query params.
             **kwargs: Variable number of keyword arguments. For example: filter_by
                 db.query(MyClass).filter_by(name='some name', id > 5)
 
@@ -202,6 +205,8 @@ class CRUDRepository:
 
         # filters
         query = buildQueryFilters(self._model, query, kwargs)
+        if clauses:
+            query = query.filter(*clauses)
 
         total = query.count()
 
@@ -224,6 +229,7 @@ class CRUDRepository:
         search_term: str,
         skip: int = 0,
         limit: int = 100,
+        clauses: Sequence = (),
         **extra_filters,
     ) -> Tuple[List[ORMModel], int]:
         """
@@ -237,6 +243,7 @@ class CRUDRepository:
             search_term (str): The search string typed by the user.
             skip (int): Number of records to skip.
             limit (int): Maximum number of records to retrieve.
+            clauses (Sequence): Extra SQLAlchemy filter clauses.
             **extra_filters: Additional filters forwarded to buildQueryFilters.
 
         Returns:
@@ -273,6 +280,8 @@ class CRUDRepository:
             or_(exact, prefix, contains, fuzzy_score >= 0.4)
         )
         query = buildQueryFilters(self._model, query, extra_filters)
+        if clauses:
+            query = query.filter(*clauses)
 
         total = query.count()
         items = (

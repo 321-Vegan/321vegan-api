@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.routes.dependencies import get_current_active_user, get_pagination_params, get_sort_by_params, RoleChecker, get_current_active_user_or_client
 from app.crud import product_crud, product_lock_crud
+from app.crud.product import brand_contact_clause
 from app.crud.user import user_crud
 from app.database.db import get_db
 from app.log import get_logger
@@ -113,12 +114,17 @@ def fetch_paginated_products(
     page, size = pagination_params
     sortby, descending = orderby_params
 
-    # check if `brand___name__lookalike` is in query
     filter_dict = filter_params.model_dump(exclude_none=True)
+    # `brand_contact` follows the brand hierarchy, so it needs its own SQL clause
+    clauses = []
+    if "brand_contact" in filter_dict:
+        clauses.append(brand_contact_clause(filter_dict.pop("brand_contact")))
+
+    # check if `brand___name__lookalike` is in query
     if "brand___name__lookalike" in filter_dict:
         brand_name = filter_dict.pop("brand___name__lookalike")
         products, total = product_crud.get_many_ranked(
-            db, 'brand___name', brand_name, skip=page, limit=size, **filter_dict
+            db, 'brand___name', brand_name, skip=page, limit=size, clauses=clauses, **filter_dict
         )
     else:
         products, total = product_crud.get_many(
@@ -127,7 +133,8 @@ def fetch_paginated_products(
             limit=size,
             order_by=sortby,
             descending=descending,
-            **filter_params.model_dump(exclude_none=True)
+            clauses=clauses,
+            **filter_dict
         )
     pages = (total + size - 1) // size
     return {

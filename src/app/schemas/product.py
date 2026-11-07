@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from fastapi import Query
-from typing import List, Optional
+from typing import List, Literal, Optional
 from app.schemas.brand import Brand
 from app.schemas.checking import CheckingOutForProduct
 from datetime import datetime, timezone
@@ -139,3 +139,5 @@ class ProductFilters(BaseModel):
     created_at__gt: Optional[str] = None
     updated_at__gt: Optional[str] = None
     last_requested_by__contains: Optional[str] = None
+    # How the brand (or a parent brand) can be contacted
+    brand_contact: Optional[Literal["email", "form", "none"]] = None
