@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.crud.notification import notification_crud
 from app.database.db import get_db
-from app.models import ApiClient, ErrorReport, Notification, NotificationDelivery
+from app.models import ApiClient, ErrorReport, Notification, NotificationDelivery, Product
 from app.routes.dependencies import get_current_active_user
 from app.routes.error_report import create_error_report
 from app.routes.notification import delete_my_notification, router
@@ -60,6 +60,19 @@ class NotificationInboxTests(NotificationTestCase):
         self.assertFalse(report.handled)
         error_report_service.update(self.db, report.id, ErrorReportUpdate(handled=True))
         self.assertEqual(self.db.query(Notification).one().user_id, self.user.id)
+
+    def test_report_notification_names_the_product_when_known(self):
+        self.db.add(Product(ean="3017620422003", name="Pâte à tartiner"))
+        for ean in ("3017620422003", "0000000000000"):
+            report = ErrorReport(ean=ean, comment="Test", created_by=self.user.id)
+            self.db.add(report)
+            self.db.commit()
+            error_report_service.update(self.db, report.id, ErrorReportUpdate(handled=True))
+        self.assertEqual(
+            [n.body for n in self.db.query(Notification).order_by(Notification.id)],
+            ["Vous pouvez consulter le retour sur « Pâte à tartiner ».",
+             "Vous pouvez consulter le retour."],
+        )
 
     def test_unowned_report_does_not_notify(self):
         report = ErrorReport(ean="123", comment="Anonymous report")

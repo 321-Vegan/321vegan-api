@@ -6,9 +6,18 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from app.database.base_class import Base
-from app.models import ErrorReport, Notification, NotificationDelivery, PushDevice, User
+from app.models import (
+    Brand, ErrorReport, InterestingProduct, Notification, NotificationDelivery, Product,
+    ProductCategory, PushDevice, User,
+)
 from app.services.notification import notification_service
 from app.services.push_device import push_device_service
+
+
+# Error reports look up their product (by EAN) for the notification text
+PRODUCT_TABLES = [
+    Brand.__table__, ProductCategory.__table__, InterestingProduct.__table__, Product.__table__,
+]
 
 
 class NotificationTestCase(unittest.TestCase):
@@ -20,7 +29,7 @@ class NotificationTestCase(unittest.TestCase):
         with engine.begin() as connection:
             connection.exec_driver_sql("PRAGMA foreign_keys=ON")
             Base.metadata.create_all(connection, tables=[
-                User.__table__, ErrorReport.__table__, Notification.__table__,
+                User.__table__, *PRODUCT_TABLES, ErrorReport.__table__, Notification.__table__,
                 PushDevice.__table__, NotificationDelivery.__table__,
             ])
         self.db = Session(engine, autoflush=False)

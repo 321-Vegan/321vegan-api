@@ -26,6 +26,7 @@ from app.services.fcm import FCMResult
 from app.services.notification import notification_service
 from app.services.notification_delivery import notification_delivery_service as deliveries
 from app.services.push_device import push_device_service as devices
+from tests.notification_support import PRODUCT_TABLES
 
 
 @unittest.skipUnless(
@@ -50,7 +51,8 @@ class NotificationConcurrencyTestCase(unittest.TestCase):
         cls.addClassCleanup(cls.engine.dispose)
         cls.Session = sessionmaker(bind=cls.engine, autoflush=False)
         Base.metadata.create_all(cls.engine, tables=[
-            User.__table__, ErrorReport.__table__, Notification.__table__, PushDevice.__table__,
+            User.__table__, *PRODUCT_TABLES, ErrorReport.__table__, Notification.__table__,
+            PushDevice.__table__,
             NotificationDelivery.__table__,
         ])
 

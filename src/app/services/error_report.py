@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 
 from app.models.error_report import ErrorReport
+from app.models.product import Product
 from app.schemas.error_report import ErrorReportUpdate
 from app.services.notification import notification_service
 
@@ -36,12 +37,22 @@ class ErrorReportService:
             db.add(report)
 
             if became_handled and report.created_by is not None:
+                # Product found by EAN; unknown products keep a generic text
+                product_name = (
+                    db.query(Product.name)
+                    .filter(Product.ean == report.ean)
+                    .scalar()
+                )
                 notification_service.create(
                     db,
                     user_id=report.created_by,
                     notification_type="error_report.handled",
                     title="Votre signalement a été traité",
-                    body="Une réponse est disponible dans l'application.",
+                    body=(
+                        f"Vous pouvez consulter le retour sur « {product_name} »."
+                        if product_name
+                        else "Vous pouvez consulter le retour."
+                    ),
                     payload={"error_report_id": report.id},
                     commit=False,
                 )
