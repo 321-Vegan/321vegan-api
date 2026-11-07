@@ -1,6 +1,10 @@
 from types import SimpleNamespace
 
 from app.models import Notification
+from app.models.restaurant_edit_suggestion import (
+    RestaurantEditSuggestionKind as Kind,
+    RestaurantEditSuggestionStatus as Status,
+)
 from app.services.restaurant_notification import restaurant_notification_service as service
 from tests.notification_support import NotificationTestCase
 
@@ -43,6 +47,62 @@ class RestaurantNotificationTests(NotificationTestCase):
                 self.db, self.restaurant(created_by), moderator_id=self.user.id)
             service.notify_rejected(
                 self.db, self.restaurant(created_by), moderator_id=self.user.id, reason=None)
+        self.db.commit()
+        self.assertEqual(self.db.query(Notification).count(), 0)
+
+    def suggestion(self, kind=Kind.EDIT, user_id=None):
+        return SimpleNamespace(id=3, restaurant_id=7, kind=kind, duplicate_of_id=9,
+                               user_id=user_id or self.user.id)
+
+    def last_notification(self):
+        self.db.commit()
+        return self.db.query(Notification).order_by(Notification.id.desc()).first()
+
+    def test_suggestion_applied_message_by_kind_and_status(self):
+        for kind, status, title, body in (
+            (Kind.EDIT, Status.APPROVED, "Votre proposition a été acceptée",
+             "Vos modifications de « Chez Tofu » sont en ligne. Merci !"),
+            (Kind.EDIT, Status.PARTIALLY_APPROVED, "Votre proposition a été acceptée en partie",
+             "Vos modifications de « Chez Tofu » sont en ligne. Merci !"),
+            (Kind.NO_VEGAN_OPTION, Status.APPROVED, "Votre proposition a été acceptée",
+             "« Chez Tofu » a été retiré de la carte. Merci !"),
+            (Kind.DUPLICATE, Status.APPROVED, "Votre proposition a été acceptée",
+             "« Chez Tofu » a été fusionné avec le lieu existant. Merci !"),
+        ):
+            with self.subTest(kind=kind, status=status):
+                service.notify_suggestion_reviewed(
+                    self.db, self.suggestion(kind), status,
+                    restaurant_name="Chez Tofu", moderator_id=self.other_user.id)
+                notification = self.last_notification()
+                self.assertEqual(notification.user_id, self.user.id)
+                self.assertEqual(notification.type, "restaurant_suggestion.approved")
+                self.assertEqual((notification.title, notification.body), (title, body))
+                merged = {"merged_into": 9} if kind == Kind.DUPLICATE else {}
+                self.assertEqual(notification.payload,
+                                 {"suggestion_id": 3, "restaurant_id": 7, **merged})
+
+    def test_suggestion_rejected_with_or_without_reason(self):
+        for reason, body in (
+            ("Horaires déjà à jour", "« Chez Tofu » : Horaires déjà à jour"),
+            (None, "Votre proposition pour « Chez Tofu » n'a pas été appliquée."),
+        ):
+            with self.subTest(reason=reason):
+                service.notify_suggestion_reviewed(
+                    self.db, self.suggestion(), Status.REJECTED,
+                    restaurant_name="Chez Tofu", moderator_id=self.other_user.id,
+                    rejection_reason=reason)
+                notification = self.last_notification()
+                self.assertEqual(notification.type, "restaurant_suggestion.rejected")
+                self.assertEqual(notification.body, body)
+                self.assertEqual(notification.payload, {"suggestion_id": 3, "restaurant_id": 7})
+
+    def test_no_suggestion_notification_for_deleted_author_or_own_suggestion(self):
+        for suggestion in (self.suggestion(user_id=0), self.suggestion()):
+            if suggestion.user_id == 0:
+                suggestion.user_id = None
+            service.notify_suggestion_reviewed(
+                self.db, suggestion, Status.APPROVED,
+                restaurant_name="Chez Tofu", moderator_id=self.user.id)
         self.db.commit()
         self.assertEqual(self.db.query(Notification).count(), 0)
 

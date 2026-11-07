@@ -21,6 +21,7 @@ from app.models.restaurant_edit_suggestion import (
     RestaurantEditSuggestionKind,
     RestaurantEditSuggestionStatus,
 )
+from app.services.restaurant_notification import restaurant_notification_service
 from app.services.s3_file_manager import s3_file_manager
 from app.schemas.restaurant import RestaurantBase, RestaurantPhotoOut, compute_restaurant_change, restaurant_state
 from app.schemas.restaurant_edit_suggestion import (
@@ -466,6 +467,10 @@ def apply_suggestion(
         user_id=current_user.id, suggestion_id=suggestion.id)
     for path in paths_to_delete:
         s3_file_manager.delete_file(path)
+    # Committed with the review below
+    restaurant_notification_service.notify_suggestion_reviewed(
+        db, suggestion, final_status, restaurant_name=restaurant.name,
+        moderator_id=current_user.id)
     suggestion = restaurant_edit_suggestion_crud.mark_reviewed(
         db, suggestion, final_status, current_user.id, applied_changes=applied)
     log.info(
@@ -498,8 +503,14 @@ def reject_suggestion(
         RestaurantSuggestionOut: The rejected suggestion.
     """
     suggestion = _get_pending_suggestion(db, id, current_user)
+    reason = (reject_in.rejection_reason or "").strip() or None
+    # Committed with the review below
+    restaurant_notification_service.notify_suggestion_reviewed(
+        db, suggestion, RestaurantEditSuggestionStatus.REJECTED,
+        restaurant_name=suggestion.restaurant.name,
+        moderator_id=current_user.id, rejection_reason=reason)
     suggestion = restaurant_edit_suggestion_crud.mark_reviewed(
         db, suggestion, RestaurantEditSuggestionStatus.REJECTED, current_user.id,
-        rejection_reason=(reject_in.rejection_reason or "").strip() or None)
+        rejection_reason=reason)
     log.info(f"Restaurant suggestion {id} rejected by moderator {current_user.id}")
     return _out(db, suggestion)

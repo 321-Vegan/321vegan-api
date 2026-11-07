@@ -1,11 +1,17 @@
 from sqlalchemy.orm import Session
 
 from app.models.restaurant import Restaurant
+from app.models.restaurant_edit_suggestion import (
+    RestaurantEditSuggestion,
+    RestaurantEditSuggestionKind,
+    RestaurantEditSuggestionStatus,
+)
 from app.services.notification import notification_service
 
 
 class RestaurantNotificationService:
-    """Notify a restaurant's creator of its moderation outcome.
+    """Notify users of the moderation outcome of the places they created and
+    of the edit suggestions they sent.
 
     Called by the moderation routes before they commit, so the notification
     is saved in the same transaction as the validation or refusal.
@@ -53,6 +59,61 @@ class RestaurantNotificationService:
             title="Votre lieu n'a pas été retenu",
             body=body,
             payload={"restaurant_id": restaurant.id},
+            commit=False,
+        )
+
+    def notify_suggestion_reviewed(
+        self,
+        db: Session,
+        suggestion: RestaurantEditSuggestion,
+        status: RestaurantEditSuggestionStatus,
+        restaurant_name: str,
+        moderator_id: int,
+        rejection_reason: str | None = None,
+    ) -> None:
+        """Tell the author of an edit suggestion it was applied or rejected.
+
+        Called before the suggestion is marked reviewed with [status].
+        """
+        if suggestion.user_id is None or suggestion.user_id == moderator_id:
+            return
+        name = f"« {restaurant_name} »"
+        if status == RestaurantEditSuggestionStatus.REJECTED:
+            notification_type = "restaurant_suggestion.rejected"
+            title = "Votre proposition n'a pas été retenue"
+            body = (
+                f"{name} : {rejection_reason}"
+                if rejection_reason
+                else f"Votre proposition pour {name} n'a pas été appliquée."
+            )
+        else:
+            notification_type = "restaurant_suggestion.approved"
+            title = (
+                "Votre proposition a été acceptée en partie"
+                if status == RestaurantEditSuggestionStatus.PARTIALLY_APPROVED
+                else "Votre proposition a été acceptée"
+            )
+            body = {
+                RestaurantEditSuggestionKind.NO_VEGAN_OPTION:
+                    f"{name} a été retiré de la carte. Merci !",
+                RestaurantEditSuggestionKind.DUPLICATE:
+                    f"{name} a été fusionné avec le lieu existant. Merci !",
+            }.get(suggestion.kind, f"Vos modifications de {name} sont en ligne. Merci !")
+        notification_service.create(
+            db,
+            user_id=suggestion.user_id,
+            notification_type=notification_type,
+            title=title,
+            body=body,
+            payload={
+                "suggestion_id": suggestion.id,
+                "restaurant_id": suggestion.restaurant_id,
+                # The place kept, for the app to open instead of the delisted one
+                **({"merged_into": suggestion.duplicate_of_id}
+                   if status != RestaurantEditSuggestionStatus.REJECTED
+                   and suggestion.kind == RestaurantEditSuggestionKind.DUPLICATE
+                   else {}),
+            },
             commit=False,
         )
 
