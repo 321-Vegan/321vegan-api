@@ -86,6 +86,18 @@ class User(Base):
     restaurants = relationship("Restaurant", back_populates="user")
     restaurant_reviews = relationship(
         "RestaurantReview", back_populates="user")
+    notifications = relationship(
+        "Notification",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    push_devices = relationship(
+        "PushDevice",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
     def _count(self, model, relationship_attr, *criteria) -> int:
         """Count the user's rows of a relationship (matching some criteria)

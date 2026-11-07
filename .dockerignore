@@ -4,6 +4,12 @@ htmlcov
 .editorconfig
 .gitignore
 .gitattributes
+.env
+.env.*
+!.env.example
+secrets/
+*.p8
+*firebase-service-account*.json
 .pylintrc
 .vscode
 .venv

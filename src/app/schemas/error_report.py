@@ -7,8 +7,6 @@ class ErrorReportBase(BaseModel):
     ean: str = Field(..., min_length=1)
     comment: str = Field(..., min_length=1)
     contact: Optional[str] = None
-    handled: Optional[bool] = False
-    created_by: Optional[int] = None
 
 
 class ErrorReportCreate(ErrorReportBase):
@@ -26,6 +24,8 @@ class ErrorReportInDB(ErrorReportBase):
     id: int
     created_at: datetime
     updated_at: datetime
+    handled: bool = False
+    created_by: Optional[int] = None
 
 
 class ErrorReportOut(BaseModel):

@@ -8,8 +8,10 @@ from app.routes.dependencies import get_current_active_user, get_current_active_
 from app.crud.error_reports import error_report_crud
 from app.database.db import get_db
 from app.log import get_logger
+from app.models import ApiClient, User
 from app.models.error_report import ErrorReport
 from app.schemas.error_report import ErrorReportCreate, ErrorReportOut, ErrorReportUpdate, ErrorReportOutPaginated, ErrorReportOutCount, ErrorReportFilters
+from app.services.error_report import error_report_service
 
 log = get_logger(__name__)
 
@@ -153,7 +155,6 @@ def fetch_error_report_by_id(
     status_code=status.HTTP_201_CREATED,
     response_model_exclude_none=True,
     response_model_exclude_unset=True,
-    dependencies=[Depends(get_current_active_user_or_client)]
 )
 def create_error_report(
     error_report_create: Annotated[
@@ -164,12 +165,12 @@ def create_error_report(
                     "ean": "1234567890123",
                     "comment": "This product information seems incorrect",
                     "contact": "user@example.com",
-                    "handled": False,
                 }
             ]
         ),
     ],
     db: Session = Depends(get_db),
+    principal: User | ApiClient = Depends(get_current_active_user_or_client),
 ):
     """
     Create an error report.
@@ -178,6 +179,8 @@ def create_error_report(
         error_report_create (ErrorReportCreate): The error report data to be created.
         db (Session, optional): The database session.
             Defaults to Depends(get_db).
+        principal (User | ApiClient): The authenticated caller. User-owned
+            reports derive their owner from this value.
 
     Returns:
         ErrorReportOut: The created error report.
@@ -187,16 +190,22 @@ def create_error_report(
             the error report in the database.
     """
     try:
-        error_report = error_report_crud.create(
-            db, error_report_create
-        )
+        create_data = error_report_create.model_dump()
+        if isinstance(principal, User):
+            create_data["created_by"] = principal.id
+        error_report = ErrorReport(**create_data)
+        db.add(error_report)
+        db.commit()
+        db.refresh(error_report)
     except IntegrityError as e:
+        db.rollback()
         error_message = str(e.orig)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Data integrity error: {error_message}",
         ) from e
     except Exception as e:
+        db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Couldn't create error report. Error: {str(e)}",
@@ -233,16 +242,19 @@ def update_error_report(
         HTTPException: If there is an error updating
             the error report in the database.
     """
-    error_report = error_report_crud.get_one(db, ErrorReport.id == id)
-    if error_report is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Error report with id {id} not found",
-        )
-
     try:
-        error_report = error_report_crud.update(
-            db, error_report, error_report_update)
+        error_report = error_report_service.update(
+            db,
+            report_id=id,
+            report_update=error_report_update,
+        )
+        if error_report is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Error report with id {id} not found",
+            )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

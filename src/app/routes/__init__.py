@@ -31,6 +31,8 @@ from app.routes.restaurant_review import router as restaurant_review_router
 from app.routes.restaurant_edit_suggestion import router as restaurant_edit_suggestion_router
 from app.routes.restaurant_selection import router as restaurant_selection_router
 from app.routes.restaurant_selection import website_router as restaurant_selection_website_router
+from app.routes.notification import router as notification_router
+from app.routes.push_device import router as push_device_router
 
 
 __all__ = [
@@ -67,4 +69,6 @@ __all__ = [
     "restaurant_selection_router",
     "restaurant_website_router",
     "restaurant_selection_website_router",
+    "notification_router",
+    "push_device_router",
 ]

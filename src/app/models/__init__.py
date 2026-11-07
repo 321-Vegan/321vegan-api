@@ -30,3 +30,6 @@ from app.models.restaurant_selection import RestaurantSelection, RestaurantSelec
 from app.models.product_edit import ProductEdit
 from app.models.product_lock import ProductLock
 from app.models.restaurant_lock import RestaurantLock
+from app.models.notification import Notification
+from app.models.push_device import PushDevice
+from app.models.notification_delivery import NotificationDelivery
