@@ -1,6 +1,8 @@
 from sqlalchemy.orm import Session
 
 from app.models.restaurant import Restaurant
+from app.models.restaurant_selection import RestaurantSelection
+from app.models.user import User
 from app.models.restaurant_edit_suggestion import (
     RestaurantEditSuggestion,
     RestaurantEditSuggestionKind,
@@ -11,7 +13,7 @@ from app.services.notification import notification_service
 
 class RestaurantNotificationService:
     """Notify users of the moderation outcome of the places they created and
-    of the edit suggestions they sent.
+    of the edit suggestions they sent, and of the selections sent to them.
 
     Called by the moderation routes before they commit, so the notification
     is saved in the same transaction as the validation or refusal.
@@ -114,6 +116,24 @@ class RestaurantNotificationService:
                    and suggestion.kind == RestaurantEditSuggestionKind.DUPLICATE
                    else {}),
             },
+            commit=False,
+        )
+
+    def notify_selection_received(
+        self,
+        db: Session,
+        selection: RestaurantSelection,
+        sender: User,
+        recipient_id: int,
+    ) -> None:
+        """Tell a user that a selection was sent to them (to accept or not)."""
+        notification_service.create(
+            db,
+            user_id=recipient_id,
+            notification_type="restaurant_selection.received",
+            title="Nouvelle sélection de lieux",
+            body=f"{sender.nickname} vous a envoyé « {selection.title} »",
+            payload={"selection_id": selection.id},
             commit=False,
         )
 

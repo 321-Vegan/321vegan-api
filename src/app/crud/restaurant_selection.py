@@ -389,7 +389,8 @@ class RestaurantSelectionShareCRUDRepository(CRUDRepository):
         elif share.status != RestaurantSelectionShareStatus.ACCEPTED:
             self.answer(db, share, RestaurantSelectionShareStatus.ACCEPTED)
 
-    def send(self, db: Session, selection_id: int, recipient_id: int) -> bool:
+    def send(self, db: Session, selection_id: int, recipient_id: int,
+             commit: bool = True) -> bool:
         """
         Send a selection to a user. Sending it again after they refused or
         removed it puts it back as pending, like a new share; nothing to do
@@ -399,6 +400,8 @@ class RestaurantSelectionShareCRUDRepository(CRUDRepository):
             db (Session): The database session.
             selection_id (int): The selection ID.
             recipient_id (int): The recipient ID.
+            commit (bool): False to leave the commit to the caller (e.g. to
+                save the recipient's notification with it).
 
         Returns:
             bool: Whether it was sent now.
@@ -415,7 +418,8 @@ class RestaurantSelectionShareCRUDRepository(CRUDRepository):
             share.responded_at = None
         else:
             return False
-        db.commit()
+        if commit:
+            db.commit()
         return True
 
     def count_accepted(self, db: Session, selection_ids: List[int]) -> Dict[int, int]:

@@ -106,6 +106,16 @@ class RestaurantNotificationTests(NotificationTestCase):
         self.db.commit()
         self.assertEqual(self.db.query(Notification).count(), 0)
 
+    def test_selection_received_notifies_recipient(self):
+        service.notify_selection_received(
+            self.db, SimpleNamespace(id=5, title="Brunchs à Lyon"),
+            sender=self.other_user, recipient_id=self.user.id)
+        notification = self.last_notification()
+        self.assertEqual(notification.user_id, self.user.id)
+        self.assertEqual(notification.type, "restaurant_selection.received")
+        self.assertEqual(notification.body, "other vous a envoyé « Brunchs à Lyon »")
+        self.assertEqual(notification.payload, {"selection_id": 5})
+
     def test_notification_is_left_to_the_caller_transaction(self):
         service.notify_validated(
             self.db, self.restaurant(self.user.id), moderator_id=self.other_user.id)

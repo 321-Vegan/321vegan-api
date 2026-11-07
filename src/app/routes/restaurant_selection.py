@@ -24,6 +24,7 @@ from app.models.restaurant_selection import (
     RestaurantSelectionShare,
     RestaurantSelectionShareStatus,
 )
+from app.services.restaurant_notification import restaurant_notification_service
 from app.services.s3_file_manager import s3_file_manager
 from app.schemas.restaurant import RestaurantMapOut, RestaurantPhotoOut
 from app.schemas.restaurant_selection import (
@@ -638,7 +639,10 @@ def send_selection(
             log.info(
                 f"Restaurant selection {id} sent by user {current_user.id} to an unknown email")
             return {"recipient_nickname": None}
-    if restaurant_selection_share_crud.send(db, selection.id, recipient.id):
+    if restaurant_selection_share_crud.send(db, selection.id, recipient.id, commit=False):
+        restaurant_notification_service.notify_selection_received(
+            db, selection, sender=current_user, recipient_id=recipient.id)
+        db.commit()
         log.info(
             f"Restaurant selection {id} sent by user {current_user.id} to user {recipient.id}")
     return {"recipient_nickname": recipient.nickname if by_code else None}
