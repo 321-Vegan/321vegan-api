@@ -9,5 +9,6 @@ httpx
 app-store-server-library
 google-api-python-client
 google-auth
+firebase-admin
 sentry-sdk[fastapi]
 boto3

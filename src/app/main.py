@@ -49,6 +49,8 @@ from app.routes import (
     restaurant_selection_router,
     restaurant_website_router,
     restaurant_selection_website_router,
+    notification_router,
+    push_device_router,
 )
 from app.log import get_logger
 
@@ -136,6 +138,8 @@ app.include_router(restaurant_edit_suggestion_router, prefix="/restaurant-sugges
 app.include_router(restaurant_selection_router, prefix="/restaurant-selections", tags=["restaurant_selection"])
 app.include_router(restaurant_website_router, prefix="/website/restaurants", tags=["website"])
 app.include_router(restaurant_selection_website_router, prefix="/website/restaurant-selections", tags=["website"])
+app.include_router(notification_router, prefix="/me/notifications", tags=["notifications"])
+app.include_router(push_device_router, prefix="/me/push-devices", tags=["push_devices"])
 
 # Serve static files
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")

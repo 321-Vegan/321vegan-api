@@ -27,6 +27,22 @@ services:
       - PATH=/app/bin:$PATH
     restart: unless-stopped
 
+  321veganfcmworker:
+    container_name: 321veganfcmworker
+    build: .
+    command: ["poetry", "run", "python", "-m", "scripts.fcm_worker"]
+    volumes:
+      - .:/app
+    depends_on:
+      - 321vegandb
+    env_file:
+      - .env
+    environment:
+      - PATH=/app/bin:$PATH
+    profiles:
+      - fcm
+    restart: unless-stopped
+
   321veganpgadmin:
     container_name: 321veganpgadmin
     image: dpage/pgadmin4

@@ -18,6 +18,7 @@ from app.crud.product_not_found_report import product_not_found_report_crud
 from app.crud.shop_review import shop_review_crud
 from app.crud.product_review import product_review_crud
 from app.crud.b12_intake import b12_intake_crud
+from app.crud.notification import notification_crud
 
 __all__ = [
     "user_crud",
@@ -40,4 +41,5 @@ __all__ = [
     "shop_review_crud",
     "product_review_crud",
     "b12_intake_crud",
+    "notification_crud",
 ]

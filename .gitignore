@@ -14,6 +14,7 @@ uploads/partners/
 # Secrets / private keys
 secrets/
 *.p8
+*firebase-service-account*.json
 
 # macOS
 .DS_Store

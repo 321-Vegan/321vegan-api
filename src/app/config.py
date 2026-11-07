@@ -63,6 +63,19 @@ class Settings(BaseSettings):
     # Geoapify Places API (nearby shop lookup); lookup is skipped if empty
     GEOAPIFY_API_KEY: str = ""
 
+    # Durable notification inbox
+    NOTIFICATION_RETENTION_DAYS: int = 90
+
+    # Firebase Cloud Messaging delivery
+    FCM_ENABLED: bool = False
+    FIREBASE_PROJECT_ID: str = ""
+    FIREBASE_CREDENTIALS_PATH: str = ""
+    FCM_ANDROID_CHANNEL_ID: str = ""
+    FCM_BATCH_SIZE: int = 100
+    FCM_POLL_INTERVAL_SECONDS: int = 5
+    FCM_MAX_ATTEMPTS: int = 5
+    FCM_PROCESSING_TIMEOUT_SECONDS: int = 300
+
     # In-app purchase - Apple App Store
     APPLE_BUNDLE_ID: str = ""
     APPLE_ISSUER_ID: str = ""
