@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.crud.notification import notification_crud
 from app.database.db import get_db
-from app.models import ErrorReport, Notification, NotificationDelivery
+from app.models import ApiClient, ErrorReport, Notification, NotificationDelivery
 from app.routes.dependencies import get_current_active_user
 from app.routes.error_report import create_error_report
 from app.routes.notification import delete_my_notification, router
@@ -47,6 +47,19 @@ class NotificationInboxTests(NotificationTestCase):
         for handled in (False, True, True):
             error_report_service.update(self.db, report.id, ErrorReportUpdate(handled=handled))
         self.assertEqual(self.db.query(Notification).count(), 1)  # previous occurrences deleted
+
+    def test_api_client_report_keeps_body_author_and_notifies(self):
+        report = create_error_report(
+            ErrorReportCreate.model_validate({
+                "ean": "123", "comment": "Incorrect label",
+                "created_by": self.user.id, "handled": True,
+            }),
+            db=self.db, principal=ApiClient(name="app", api_key="test", is_active=True),
+        )
+        self.assertEqual(report.created_by, self.user.id)
+        self.assertFalse(report.handled)
+        error_report_service.update(self.db, report.id, ErrorReportUpdate(handled=True))
+        self.assertEqual(self.db.query(Notification).one().user_id, self.user.id)
 
     def test_unowned_report_does_not_notify(self):
         report = ErrorReport(ean="123", comment="Anonymous report")

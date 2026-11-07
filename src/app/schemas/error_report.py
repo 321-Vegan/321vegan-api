@@ -10,7 +10,9 @@ class ErrorReportBase(BaseModel):
 
 
 class ErrorReportCreate(ErrorReportBase):
-    pass
+    # Old app versions send the author in the body with the API key only.
+    # Ignored when the caller is an authenticated user.
+    created_by: Optional[int] = None
 
 
 class ErrorReportUpdate(BaseModel):
