@@ -19,6 +19,7 @@ from app.models.user import UserRole
 from app.models.restaurant import Restaurant, RestaurantServiceOption, RestaurantTag, RestaurantVeganStatus
 from app.models.restaurant_photo import RestaurantPhoto, RestaurantPhotoKind, RestaurantPhotoStatus
 from app.models.restaurant_lock import RestaurantLock
+from app.services.restaurant_notification import restaurant_notification_service
 from app.services.s3_file_manager import s3_file_manager
 from app.schemas.restaurant import (
     compute_restaurant_change,
@@ -742,6 +743,12 @@ def update_restaurant(
     if not values:
         return _restaurant_out(restaurant, current_user, db)
 
+    # Committed with the change below
+    if after.get('validated') is True:
+        restaurant_notification_service.notify_validated(
+            db, restaurant, moderator_id=current_user.id,
+            name=values.get('name'))
+
     updated_restaurant = restaurant_crud.update_with_history(
         db, restaurant, values, before, after, user_id=current_user.id)
     # The work is done: release the user's lock
@@ -783,6 +790,10 @@ def delete_restaurant(
     reason = None
     if not restaurant.validated and delete_in is not None:
         reason = (delete_in.rejection_reason or "").strip() or None
+    if not restaurant.validated:
+        # Committed with the deletion below
+        restaurant_notification_service.notify_rejected(
+            db, restaurant, moderator_id=current_user.id, reason=reason)
     restaurant_crud.soft_delete(db, restaurant, rejection_reason=reason)
     restaurant_lock_crud.unlock(db, restaurant, current_user)
     log.info(f"Restaurant soft-deleted: ID {id}")
