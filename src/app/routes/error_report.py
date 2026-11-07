@@ -192,6 +192,7 @@ def create_error_report(
     try:
         create_data = error_report_create.model_dump()
         if isinstance(principal, User):
+            # A logged-in caller can only report as themselves
             create_data["created_by"] = principal.id
         error_report = ErrorReport(**create_data)
         db.add(error_report)
