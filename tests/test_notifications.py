@@ -9,7 +9,7 @@ from app.database.db import get_db
 from app.models import ErrorReport, Notification, NotificationDelivery
 from app.routes.dependencies import get_current_active_user
 from app.routes.error_report import create_error_report
-from app.routes.notification import mark_my_notification_read, router
+from app.routes.notification import delete_my_notification, router
 from app.schemas.error_report import ErrorReportCreate, ErrorReportUpdate
 from app.services.error_report import error_report_service
 from app.services.notification_delivery import notification_delivery_service
@@ -40,7 +40,7 @@ class NotificationInboxTests(NotificationTestCase):
         self.assertEqual(len(notifications), 2)  # the previous occurrence is still unread
         self.assertIn(first_id, [row.id for row in notifications])
         for row in notifications:
-            mark_my_notification_read(row.id, self.db, self.user)
+            delete_my_notification(row.id, self.db, self.user)
             self.db.expunge(row)  # end the deleted object's lifecycle; SQLite can reuse IDs
         error_report_service.update(self.db, report.id, ErrorReportUpdate(handled=True))
         self.assertEqual(self.db.query(Notification).count(), 0)
@@ -67,24 +67,50 @@ class NotificationInboxTests(NotificationTestCase):
         self.assertFalse(report.handled)
         self.assertEqual(self.db.query(Notification).count(), 0)
 
-    def test_acknowledgement_is_authenticated_scoped_idempotent_and_cascades(self):
-        self.register_device()
-        notification_id = self.make_notification().id
+    def make_client(self):
         app = FastAPI()
         app.include_router(router, prefix="/me/notifications")
         app.dependency_overrides[get_db] = lambda: self.db
+        return app, TestClient(app)
+
+    def test_read_is_authenticated_scoped_idempotent_and_keeps_notification(self):
+        self.register_device()
+        notification_id = self.make_notification().id
+        app, client = self.make_client()
         path = f"/me/notifications/{notification_id}/read"
-        with TestClient(app) as client:
+        with client:
             self.assertEqual(client.patch(path).status_code, 401)
             app.dependency_overrides[get_current_active_user] = lambda: self.other_user
             response = client.patch(path)
             self.assertEqual((response.status_code, response.content), (204, b""))
+            app.dependency_overrides[get_current_active_user] = lambda: self.user
+            self.assertIsNone(client.get("/me/notifications/").json()[0]["read_at"])
+            response = client.patch(path)
+            self.assertEqual((response.status_code, response.content), (204, b""))
+            first_read_at = client.get("/me/notifications/").json()[0]["read_at"]
+            self.assertIsNotNone(first_read_at)
+            for target in (path, f"/me/notifications/{notification_id + 1000}/read"):
+                response = client.patch(target)
+                self.assertEqual((response.status_code, response.content), (204, b""))
+            self.assertEqual(client.get("/me/notifications/").json()[0]["read_at"], first_read_at)
+        self.assertEqual(self.db.query(Notification).count(), 1)
+        self.assertEqual(self.db.query(NotificationDelivery).count(), 1)
+
+    def test_delete_is_authenticated_scoped_idempotent_and_cascades(self):
+        self.register_device()
+        notification_id = self.make_notification().id
+        app, client = self.make_client()
+        path = f"/me/notifications/{notification_id}"
+        with client:
+            self.assertEqual(client.delete(path).status_code, 401)
+            app.dependency_overrides[get_current_active_user] = lambda: self.other_user
+            response = client.delete(path)
+            self.assertEqual((response.status_code, response.content), (204, b""))
             self.assertEqual(self.db.query(Notification).count(), 1)
             self.assertEqual(self.db.query(NotificationDelivery).count(), 1)
             app.dependency_overrides[get_current_active_user] = lambda: self.user
-            self.assertIsNone(client.get("/me/notifications/").json()[0]["read_at"])
-            for target in (path, path, f"/me/notifications/{notification_id + 1000}/read"):
-                response = client.patch(target)
+            for target in (path, path, f"/me/notifications/{notification_id + 1000}"):
+                response = client.delete(target)
                 self.assertEqual((response.status_code, response.content), (204, b""))
             self.assertEqual(client.get("/me/notifications/").json(), [])
         self.assertEqual(self.db.query(Notification).count(), 0)

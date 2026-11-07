@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from app.models import NotificationDelivery
-from app.routes.notification import mark_my_notification_read
+from app.routes.notification import delete_my_notification, mark_my_notification_read
 from app.services.fcm import FCMClient, FCMResult
 from app.services.notification_delivery import notification_delivery_service as deliveries
 from app.services.push_device import push_device_service as devices
@@ -70,7 +70,7 @@ class FCMDeliveryTests(NotificationTestCase):
                     self.assertIsNotNone(device.invalidated_at)
 
     def test_claim_rechecks_cancellation_owner_expiry_and_deletion(self):
-        for change in ("logout", "reassign", "expired", "owner_changed", "acknowledged"):
+        for change in ("logout", "reassign", "expired", "owner_changed", "read", "deleted"):
             with self.subTest(change=change):
                 device = self.register_device()
                 notification = self.make_notification()
@@ -79,8 +79,10 @@ class FCMDeliveryTests(NotificationTestCase):
                     devices.deactivate(self.db, device_id=device.id, user_id=self.user.id)
                 elif change == "reassign":
                     self.register_device(user_id=self.other_user.id)
-                elif change == "acknowledged":
+                elif change == "read":
                     mark_my_notification_read(notification.id, self.db, self.user)
+                elif change == "deleted":
+                    delete_my_notification(notification.id, self.db, self.user)
                 else:
                     if change == "expired":
                         notification.expires_at = datetime.now() - timedelta(seconds=1)
@@ -95,7 +97,7 @@ class FCMDeliveryTests(NotificationTestCase):
                     self.make_notification()
                     self.assertEqual(self.db.query(NotificationDelivery).count(), previous_count)
                 row = self.db.get(NotificationDelivery, claim[0])
-                if change == "acknowledged":
+                if change == "deleted":
                     self.assertIsNone(row)
                 else:
                     self.assertEqual(row.status, "failed")

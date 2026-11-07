@@ -29,13 +29,34 @@ class NotificationCRUDRepository(CRUDRepository):
             .all()
         )
 
+    def mark_read_for_user(
+        self,
+        db: Session,
+        notification_id: int,
+        user_id: int,
+    ) -> None:
+        """Mark an owned notification read once; missing rows are harmless."""
+        (
+            db.query(self._model)
+            .filter(
+                self._model.id == notification_id,
+                self._model.user_id == user_id,
+                self._model.read_at.is_(None),
+            )
+            .update(
+                {self._model.read_at: datetime.now()},
+                synchronize_session=False,
+            )
+        )
+        db.commit()
+
     def delete_for_user(
         self,
         db: Session,
         notification_id: int,
         user_id: int,
     ) -> None:
-        """Acknowledge an owned notification; missing rows are harmless."""
+        """Delete an owned notification; missing rows are harmless."""
         (
             db.query(self._model)
             .filter(

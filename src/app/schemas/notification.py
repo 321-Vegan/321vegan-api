@@ -11,8 +11,7 @@ class NotificationOut(BaseModel):
     body: str
     payload: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
-    # Compatibility only: opened notifications are deleted, never stored as read.
-    read_at: None = None
+    read_at: datetime | None = None
     expires_at: datetime
 
     class Config:

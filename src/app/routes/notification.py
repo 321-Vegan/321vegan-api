@@ -40,6 +40,24 @@ def mark_my_notification_read(
     db: Session = Depends(get_db),
     active_user: User = Depends(get_current_active_user),
 ) -> Response:
+    """Mark an owned notification read; always acknowledge with 204."""
+    notification_crud.mark_read_for_user(
+        db,
+        notification_id=notification_id,
+        user_id=active_user.id,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete(
+    "/{notification_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_my_notification(
+    notification_id: int,
+    db: Session = Depends(get_db),
+    active_user: User = Depends(get_current_active_user),
+) -> Response:
     """Delete an owned notification and its deliveries; always acknowledge with 204."""
     notification_crud.delete_for_user(
         db,

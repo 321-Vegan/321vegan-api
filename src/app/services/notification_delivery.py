@@ -168,6 +168,8 @@ class NotificationDeliveryService:
             reason = "DeviceOwnershipChangedOrDisabled"
         elif notification.expires_at <= datetime.now():
             reason = "NotificationExpired"
+        elif notification.read_at is not None:
+            reason = "NotificationRead"
         else:
             reason = None
         if reason:

@@ -35,6 +35,7 @@ class Notification(Base):
     body = Column(Text, nullable=False)
     payload = Column(JSON, nullable=False, default=dict)
     created_at = Column(DateTime, default=datetime.now, nullable=False)
+    read_at = Column(DateTime, nullable=True)
     expires_at = Column(DateTime, nullable=False)
 
     user = relationship("User", back_populates="notifications")

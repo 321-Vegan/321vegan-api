@@ -39,9 +39,10 @@ make migration-apply
 make fcm-worker
 ```
 
-Revision `b6e2f7c91a04` creates the three notification tables directly in their
-final form, without read-state or per-entity deduplication columns. Apply it
-before starting the updated API and worker.
+Revision `b6e2f7c91a04` creates the three notification tables, without
+per-entity deduplication columns, and revision `c3f1a8d4e7b2` adds the
+`notifications.read_at` column. Apply both before starting the updated API and
+worker.
 
 ## Flutter registration contract
 
@@ -77,24 +78,26 @@ Older app builds may continue sending an `environment` field; it is ignored.
 The registration response temporarily retains deprecated `provider` and
 `environment` constants for response compatibility, but they are not stored.
 
-## Inbox and acknowledgement contract
+## Inbox, read and delete contract
 
 - `GET /me/notifications/?after_id=0&limit=100` returns the authenticated user's
-  unexpired, unopened notifications in ascending ID order. `read_at` remains
-  present as `null` for response compatibility; it is no longer stored.
+  unexpired notifications, read and unread, in ascending ID order. `read_at` is
+  `null` until the notification is marked read.
 - On opening a notification, call `PATCH /me/notifications/{notification_id}/read`
-  with the bearer token and **no request body**. It deletes that user's
-  notification and its delivery rows and returns **204 No Content**. The same
-  empty response is returned for a missing ID or another user's ID, without
-  deleting another user's data. Repeated acknowledgements are safe.
-- Remove the acknowledged item from the app's local inbox. There is no API
-  read-history list. Do not acknowledge merely on receipt of a push.
-- If acknowledgement fails (for example, while offline), retain it for retry
-  under the same user account. Opening locally cannot delete the server row
-  until an acknowledgement succeeds; the idempotent endpoint makes retries safe.
-- The cursor reports new notifications, not deletions. To reconcile deletion
-  on another device, reload all pages from `after_id=0` and replace/reconcile
-  the cached inbox, rather than only appending. Drop cached expired entries too.
+  with the bearer token and **no request body**. It sets `read_at` (only the
+  first time) and returns **204 No Content**. The notification stays in the
+  inbox. A push still waiting to be sent for it is cancelled. Do not mark read
+  merely on receipt of a push.
+- To remove a notification at the user's request, call
+  `DELETE /me/notifications/{notification_id}`. It deletes that user's
+  notification and its delivery rows and returns **204 No Content**.
+- Both endpoints return the same empty 204 for a missing ID or another user's
+  ID, without touching another user's data. Repeated calls are safe, so retain
+  failed calls (for example, while offline) for retry under the same account.
+- The cursor reports new notifications, not read-state changes or deletions.
+  To reconcile changes made on another device, reload all pages from
+  `after_id=0` and replace the cached inbox, rather than only appending. Drop
+  cached expired entries too.
 
 For `error_report.handled`, each `handled: false → true` transition creates a
 notification. Repeating `handled: true` creates none. Reopening and handling
@@ -120,8 +123,10 @@ expired inbox and delivery rows do not accumulate indefinitely.
 5. Confirm a `notifications` row and a `notification_deliveries` row exist.
 6. Confirm the delivery becomes `sent` and stores the Firebase message ID.
 7. Test foreground, background, terminated, tap, logout, and token-refresh flows.
-8. Open the notification; confirm the acknowledgement returns 204 and both the
-   notification and its deliveries disappear. Repeat the acknowledgement.
+8. Open the notification; confirm `PATCH .../read` returns 204 and the
+   notification is still listed with `read_at` set. Delete it; confirm
+   `DELETE` returns 204 and both the notification and its deliveries disappear.
+   Repeat both calls.
 9. Repeat handling (no new notification), then reopen and handle the report
    again (a new notification). Also test while the previous occurrence is unread.
 
@@ -146,9 +151,11 @@ accepted pushes with `GET /me/notifications/` after receiving or opening them.
   wait for that send to finish. Each Firebase HTTP wait is limited to 15 seconds
   (SDK retries may extend the overall send). A cancelled or superseded claim
   cannot send; an expired notification or mismatched owner is also rejected.
-- Acknowledgement cascades to outstanding deliveries. A worker whose claimed
-  row has disappeared skips it. If a send is already in flight, deletion waits
-  for its delivery lock; deletion cannot retract a push accepted by Firebase.
+- Deletion cascades to outstanding deliveries. A worker whose claimed row has
+  disappeared skips it, and a worker whose notification is already read marks
+  the delivery `failed` (`NotificationRead`) without sending. If a send is
+  already in flight, deletion waits for its delivery lock; neither read nor
+  deletion can retract a push accepted by Firebase.
 - A process crash after Firebase accepts a push but before the database commit
   can still cause redelivery. Flutter should deduplicate by `notification_id`.
   `sent` means Firebase accepted the request, not that the device displayed it.
