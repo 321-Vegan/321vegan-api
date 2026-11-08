@@ -43,6 +43,13 @@ class RestaurantServiceOption(str, enum.Enum):
     DELIVERY = "delivery"
 
 
+class RestaurantEntranceAccess(str, enum.Enum):
+    """(accessibilité PMR)."""
+    STEP_FREE = "step_free"
+    RAMP_ON_REQUEST = "ramp_on_request"
+    NOT_ACCESSIBLE = "not_accessible"
+
+
 class Restaurant(Base):
     """
     Restaurant model: any place serving food that is fully vegan or has at
@@ -85,6 +92,13 @@ class Restaurant(Base):
     has_storefront = Column(Boolean, default=True,
                             server_default="true", nullable=False)
     service_area = Column(String, nullable=True)
+    # Accessibility (PMR), null = unknown. Toilets for every customer, and
+    # toilets fit for wheelchair users (which implies the former)
+    entrance_access = Column(String, nullable=True)
+    has_toilets = Column(Boolean, nullable=True)
+    has_accessible_toilets = Column(Boolean, nullable=True)
+    # Free details (narrow doorway, step at the toilets...)
+    accessibility_note = Column(String, nullable=True)
     # [{"day": 0-6 (monday first), "open": "HH:MM", "close": "HH:MM"}, ...]
     # close < open means the slot ends after midnight
     opening_hours = Column(JSONB, nullable=True)

@@ -1,7 +1,7 @@
 from datetime import date, datetime, timezone
 from typing import List, NamedTuple, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from app.models.restaurant import RestaurantVeganStatus, RestaurantOperatingStatus, RestaurantTag, RestaurantServiceOption
+from app.models.restaurant import RestaurantVeganStatus, RestaurantOperatingStatus, RestaurantTag, RestaurantServiceOption, RestaurantEntranceAccess
 from app.models.restaurant_photo import RestaurantPhotoKind, RestaurantPhotoStatus
 
 TIME_PATTERN = r"^([01]\d|2[0-3]):[0-5]\d$"
@@ -13,7 +13,7 @@ CONTACT_FIELDS = ("phone", "website", "facebook", "instagram")
 TEXT_FIELDS = ("name", "address", "city", "country", "description",
                "vegan_options_details", "service_area", "opening_hours_note",
                "phone", "website", "facebook", "instagram", "menu_url",
-               "closure_note")
+               "closure_note", "accessibility_note")
 
 
 def _to_minutes(hhmm: str) -> int:
@@ -100,6 +100,11 @@ class RestaurantBase(BaseModel):
     serves_hot_drinks: Optional[bool] = None
     has_storefront: bool = True
     service_area: Optional[str] = Field(None, max_length=200)
+    # Accessibility (PMR), null = unknown. Accessible toilets imply toilets.
+    entrance_access: Optional[RestaurantEntranceAccess] = None
+    has_toilets: Optional[bool] = None
+    has_accessible_toilets: Optional[bool] = None
+    accessibility_note: Optional[str] = Field(None, max_length=500)
     opening_hours: Optional[List[OpeningSlot]] = None
     opening_hours_note: Optional[str] = Field(None, max_length=500)
     # Food trucks only; the first stop is the restaurant's position
@@ -152,6 +157,11 @@ class RestaurantBase(BaseModel):
                 raise ValueError(
                     "A place without hot drinks has no plant milk surcharge")
             self.serves_hot_drinks = True
+        if self.has_accessible_toilets:
+            if self.has_toilets is False:
+                raise ValueError(
+                    "A place without toilets has no accessible toilets")
+            self.has_toilets = True
 
         if not self.has_storefront:
             if RestaurantServiceOption.DINE_IN in self.service_options:
@@ -165,6 +175,11 @@ class RestaurantBase(BaseModel):
             if not any(getattr(self, field) for field in CONTACT_FIELDS):
                 raise ValueError(
                     "A phone, website, facebook or instagram is required without a storefront")
+            # No place to welcome customers
+            self.entrance_access = None
+            self.has_toilets = None
+            self.has_accessible_toilets = None
+            self.accessibility_note = None
             # Many caterers work from home: never keep a precise position
             # (2 decimals is about 1 km)
             self.latitude = round(self.latitude, 2)
@@ -263,6 +278,10 @@ class RestaurantUpdate(BaseModel):
     serves_hot_drinks: Optional[bool] = None
     has_storefront: Optional[bool] = None
     service_area: Optional[str] = None
+    entrance_access: Optional[RestaurantEntranceAccess] = None
+    has_toilets: Optional[bool] = None
+    has_accessible_toilets: Optional[bool] = None
+    accessibility_note: Optional[str] = None
     opening_hours: Optional[List[OpeningSlot]] = None
     opening_hours_note: Optional[str] = None
     stops: Optional[List[RestaurantStop]] = None
@@ -379,6 +398,10 @@ class RestaurantOut(BaseModel):
     serves_hot_drinks: Optional[bool] = None
     has_storefront: bool
     service_area: Optional[str] = None
+    entrance_access: Optional[str] = None
+    has_toilets: Optional[bool] = None
+    has_accessible_toilets: Optional[bool] = None
+    accessibility_note: Optional[str] = None
     opening_hours: Optional[List[OpeningSlot]] = None
     opening_hours_note: Optional[str] = None
     stops: Optional[List[RestaurantStop]] = None
