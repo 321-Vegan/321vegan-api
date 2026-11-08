@@ -23,11 +23,11 @@ class RestaurantNotificationService:
         self,
         db: Session,
         restaurant: Restaurant,
-        moderator_id: int,
         name: str | None = None,
     ) -> None:
         """[name]: the new name when the moderator renames it while validating."""
-        if not self._has_other_creator(restaurant, moderator_id):
+        # Imported places have no creator to notify
+        if restaurant.created_by is None:
             return
         notification_service.create(
             db,
@@ -44,10 +44,9 @@ class RestaurantNotificationService:
         self,
         db: Session,
         restaurant: Restaurant,
-        moderator_id: int,
         reason: str | None,
     ) -> None:
-        if not self._has_other_creator(restaurant, moderator_id):
+        if restaurant.created_by is None:
             return
         body = (
             f"« {restaurant.name} » : {reason}"
@@ -135,15 +134,6 @@ class RestaurantNotificationService:
             body=f"{sender.nickname} vous a envoyé « {selection.title} »",
             payload={"selection_id": selection.id},
             commit=False,
-        )
-
-    @staticmethod
-    def _has_other_creator(restaurant: Restaurant, moderator_id: int) -> bool:
-        # Imported places have no creator; a moderator needs no notification
-        # about their own place.
-        return (
-            restaurant.created_by is not None
-            and restaurant.created_by != moderator_id
         )
 
 

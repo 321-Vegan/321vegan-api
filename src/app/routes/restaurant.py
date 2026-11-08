@@ -768,8 +768,7 @@ def update_restaurant(
     # Committed with the change below
     if after.get('validated') is True:
         restaurant_notification_service.notify_validated(
-            db, restaurant, moderator_id=current_user.id,
-            name=values.get('name'))
+            db, restaurant, name=values.get('name'))
 
     updated_restaurant = restaurant_crud.update_with_history(
         db, restaurant, values, before, after, user_id=current_user.id)
@@ -815,7 +814,7 @@ def delete_restaurant(
     if not restaurant.validated:
         # Committed with the deletion below
         restaurant_notification_service.notify_rejected(
-            db, restaurant, moderator_id=current_user.id, reason=reason)
+            db, restaurant, reason=reason)
     restaurant_crud.soft_delete(db, restaurant, rejection_reason=reason)
     restaurant_lock_crud.unlock(db, restaurant, current_user)
     log.info(f"Restaurant soft-deleted: ID {id}")

@@ -16,8 +16,7 @@ class RestaurantNotificationTests(NotificationTestCase):
 
     def test_validated_notifies_creator_with_new_name(self):
         service.notify_validated(
-            self.db, self.restaurant(self.user.id),
-            moderator_id=self.other_user.id, name="Chez Tofu Paris",
+            self.db, self.restaurant(self.user.id), name="Chez Tofu Paris",
         )
         self.db.commit()
         notification = self.db.query(Notification).one()
@@ -33,20 +32,16 @@ class RestaurantNotificationTests(NotificationTestCase):
         ):
             with self.subTest(reason=reason):
                 service.notify_rejected(
-                    self.db, self.restaurant(self.user.id),
-                    moderator_id=self.other_user.id, reason=reason,
+                    self.db, self.restaurant(self.user.id), reason=reason,
                 )
                 self.db.commit()
                 notification = self.db.query(Notification).order_by(Notification.id.desc()).first()
                 self.assertEqual(notification.type, "restaurant.rejected")
                 self.assertEqual(notification.body, expected)
 
-    def test_no_notification_without_creator_or_for_own_place(self):
-        for created_by in (None, self.user.id):
-            service.notify_validated(
-                self.db, self.restaurant(created_by), moderator_id=self.user.id)
-            service.notify_rejected(
-                self.db, self.restaurant(created_by), moderator_id=self.user.id, reason=None)
+    def test_no_notification_without_creator(self):
+        service.notify_validated(self.db, self.restaurant(None))
+        service.notify_rejected(self.db, self.restaurant(None), reason=None)
         self.db.commit()
         self.assertEqual(self.db.query(Notification).count(), 0)
 
@@ -117,7 +112,6 @@ class RestaurantNotificationTests(NotificationTestCase):
         self.assertEqual(notification.payload, {"selection_id": 5})
 
     def test_notification_is_left_to_the_caller_transaction(self):
-        service.notify_validated(
-            self.db, self.restaurant(self.user.id), moderator_id=self.other_user.id)
+        service.notify_validated(self.db, self.restaurant(self.user.id))
         self.db.rollback()
         self.assertEqual(self.db.query(Notification).count(), 0)
