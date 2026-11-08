@@ -126,7 +126,10 @@ class Restaurant(Base):
     date_deleted = Column(DateTime(timezone=True), nullable=True, index=True)
     # Why a moderator refused it (deleted while pending), shown to its creator
     rejection_reason = Column(String, nullable=True)
-    photos = relationship("RestaurantPhoto",
+    # Why moderators put a pending one aside (the place must be contacted...):
+    # left out of the validator until cleared. Only shown to moderators.
+    validation_issue = Column(Text, nullable=True)
+    photos =relationship("RestaurantPhoto",
                           back_populates="restaurant",
                           cascade="all, delete",
                           passive_deletes=True,

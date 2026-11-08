@@ -277,6 +277,17 @@ class RestaurantUpdate(BaseModel):
     closure_note: Optional[str] = None
     # Moderators only
     validated: Optional[bool] = None
+    # Moderators only: set to put a pending restaurant aside, null to bring it
+    # back to the validator. Cleared when the restaurant is validated.
+    validation_issue: Optional[str] = Field(None, max_length=1000)
+
+    @field_validator("validation_issue", mode="before")
+    @classmethod
+    def strip_validation_issue(cls, value):
+        if isinstance(value, str):
+            value = value.strip()
+            return value or None
+        return value
 
 
 class RestaurantDelete(BaseModel):
@@ -387,6 +398,8 @@ class RestaurantOut(BaseModel):
     # Refused by a moderator (only listed to its creator), with the reason
     is_rejected: bool = False
     rejection_reason: Optional[str] = None
+    # Why moderators put it aside (moderators only)
+    validation_issue: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     # Approved photo shown first on the restaurant page
@@ -470,4 +483,6 @@ class RestaurantFilters(BaseModel):
     operating_status: Optional[RestaurantOperatingStatus] = None
     has_storefront: Optional[bool] = None
     validated: Optional[bool] = None
+    # False: put aside with an issue, true: to validate (when pending)
+    validation_issue__isnull: Optional[bool] = None
     created_by: Optional[int] = None

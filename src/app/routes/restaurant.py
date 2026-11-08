@@ -141,7 +141,12 @@ def _restaurant_out(
             or (user_id is not None and photo.user_id == user_id)
         )
     ]
-    update = {"photos": photos, "is_saved": restaurant.id in saved_ids}
+    update = {
+        "photos": photos,
+        "is_saved": restaurant.id in saved_ids,
+        # Internal to the moderators
+        "validation_issue": restaurant.validation_issue if is_moderator else None,
+    }
     if not restaurant.has_storefront and not (is_moderator or is_creator):
         update["address"] = None
     return out.model_copy(update=update)
@@ -699,8 +704,10 @@ def update_restaurant(
 ) -> RestaurantOut:
     """
     Update a restaurant directly: by its creator while it is pending, by a
-    moderator at any time. Only moderators can validate it. Every change is
-    recorded in the restaurant history.
+    moderator at any time. Only moderators can validate it, or put it aside
+    with a validation issue (left out of the validator until cleared; a
+    validated restaurant has none). Every change is recorded in the
+    restaurant history.
 
     Parameters:
         id (int): The ID of the restaurant.
@@ -727,6 +734,13 @@ def update_restaurant(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only moderators can validate a restaurant",
         )
+    sets_issue = 'validation_issue' in changes
+    validation_issue = changes.pop('validation_issue', None)
+    if sets_issue and not is_moderator:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only moderators can put a restaurant aside",
+        )
 
     # Check the business rules on the restaurant as it will be
     try:
@@ -739,6 +753,14 @@ def update_restaurant(
         values['validated'] = validated
         before['validated'] = restaurant.validated
         after['validated'] = validated
+
+    # Validating it settles its issue
+    if (restaurant.validated if validated is None else validated):
+        sets_issue, validation_issue = True, None
+    if sets_issue and validation_issue != restaurant.validation_issue:
+        values['validation_issue'] = validation_issue
+        before['validation_issue'] = restaurant.validation_issue
+        after['validation_issue'] = validation_issue
 
     if not values:
         return _restaurant_out(restaurant, current_user, db)
