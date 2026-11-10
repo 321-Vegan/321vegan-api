@@ -143,6 +143,9 @@ class Restaurant(Base):
     # Why moderators put a pending one aside (the place must be contacted...):
     # left out of the validator until cleared. Only shown to moderators.
     validation_issue = Column(Text, nullable=True)
+    # The place was contacted about its issue: cleared with it
+    contacted = Column(Boolean, default=False,
+                       server_default="false", nullable=False)
     photos =relationship("RestaurantPhoto",
                           back_populates="restaurant",
                           cascade="all, delete",

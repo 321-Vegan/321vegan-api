@@ -144,6 +144,7 @@ def _restaurant_out(
         "is_saved": restaurant.id in saved_ids,
         # Internal to the moderators
         "validation_issue": restaurant.validation_issue if is_moderator else None,
+        "contacted": restaurant.contacted if is_moderator else False,
     }
     if not restaurant.has_storefront and not (is_moderator or is_creator):
         update["address"] = None
@@ -699,8 +700,8 @@ def update_restaurant(
     Update a restaurant directly: by its creator while it is pending, by a
     moderator at any time. Only moderators can validate it, or put it aside
     with a validation issue (left out of the validator until cleared; a
-    validated restaurant has none). Every change is recorded in the
-    restaurant history.
+    validated restaurant has none) and mark it contacted. Every change is
+    recorded in the restaurant history.
 
     Parameters:
         id (int): The ID of the restaurant.
@@ -729,7 +730,8 @@ def update_restaurant(
         )
     sets_issue = 'validation_issue' in changes
     validation_issue = changes.pop('validation_issue', None)
-    if sets_issue and not is_moderator:
+    contacted = changes.pop('contacted', None)
+    if (sets_issue or contacted is not None) and not is_moderator:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only moderators can put a restaurant aside",
@@ -754,6 +756,17 @@ def update_restaurant(
         values['validation_issue'] = validation_issue
         before['validation_issue'] = restaurant.validation_issue
         after['validation_issue'] = validation_issue
+
+    # Only a restaurant put aside can be contacted
+    if not sets_issue:
+        validation_issue = restaurant.validation_issue
+    if contacted is None:
+        contacted = restaurant.contacted
+    contacted = contacted and validation_issue is not None
+    if contacted != restaurant.contacted:
+        values['contacted'] = contacted
+        before['contacted'] = restaurant.contacted
+        after['contacted'] = contacted
 
     if not values:
         return _restaurant_out(restaurant, current_user, db)

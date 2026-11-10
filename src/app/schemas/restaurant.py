@@ -299,6 +299,9 @@ class RestaurantUpdate(BaseModel):
     # Moderators only: set to put a pending restaurant aside, null to bring it
     # back to the validator. Cleared when the restaurant is validated.
     validation_issue: Optional[str] = Field(None, max_length=1000)
+    # Moderators only: the place put aside was contacted. Cleared with the
+    # validation issue.
+    contacted: Optional[bool] = None
 
     @field_validator("validation_issue", mode="before")
     @classmethod
@@ -423,6 +426,8 @@ class RestaurantOut(BaseModel):
     rejection_reason: Optional[str] = None
     # Why moderators put it aside (moderators only)
     validation_issue: Optional[str] = None
+    # Put aside and contacted since (moderators only)
+    contacted: bool = False
     created_at: datetime
     updated_at: datetime
     # Approved photo shown first on the restaurant page
@@ -508,4 +513,5 @@ class RestaurantFilters(BaseModel):
     validated: Optional[bool] = None
     # False: put aside with an issue, true: to validate (when pending)
     validation_issue__isnull: Optional[bool] = None
+    contacted: Optional[bool] = None
     created_by: Optional[int] = None
