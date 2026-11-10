@@ -45,8 +45,6 @@ router = APIRouter(dependencies=[Depends(get_current_active_user)])
 # The website, showing a restaurant to anyone with its link
 website_router = APIRouter(dependencies=[Depends(get_admin_or_client)])
 
-MAX_PHOTOS_PER_KIND = 10
-
 
 def _is_moderator(user: User) -> bool:
     return user.has_role(UserRole.MODERATOR)
@@ -569,11 +567,6 @@ def update_photo_kind(
         )
     if photo.kind == kind_in.kind:
         return photo
-    if restaurant_photo_crud.count_for_kind(db, photo.restaurant_id, kind_in.kind) >= MAX_PHOTOS_PER_KIND:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"A restaurant cannot have more than {MAX_PHOTOS_PER_KIND} photos of this kind",
-        )
     updated_photo = restaurant_photo_crud.update(db, photo, kind_in)
     log.info(
         f"Restaurant photo {photo_id} kind updated to {kind_in.kind} by moderator {current_user.id}")
@@ -923,11 +916,6 @@ def upload_restaurant_photo(
         RestaurantPhotoOut: The created photo.
     """
     restaurant = _get_visible_restaurant(db, id, current_user)
-    if restaurant_photo_crud.count_for_kind(db, id, kind) >= MAX_PHOTOS_PER_KIND:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"A restaurant cannot have more than {MAX_PHOTOS_PER_KIND} photos of this kind",
-        )
 
     file_extension = Path(file.filename or "").suffix.lower()
     object_name = f"restaurants/{restaurant.id}/{kind.value.lower()}_{uuid.uuid4().hex}{file_extension}"

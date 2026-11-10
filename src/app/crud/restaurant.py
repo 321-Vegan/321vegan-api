@@ -453,25 +453,6 @@ class RestaurantPhotoCRUDRepository(CRUDRepository):
         db.refresh(photo)
         return photo
 
-    def count_for_kind(self, db: Session, restaurant_id: int, kind: str) -> int:
-        """
-        Count the place or menu photos of a restaurant that were not rejected.
-
-        Parameters:
-            db (Session): The database session.
-            restaurant_id (int): The restaurant ID.
-            kind (str): The photo kind (PLACE or MENU).
-
-        Returns:
-            int: The number of photos.
-        """
-        return db.query(func.count(self._model.id)).filter(
-            self._model.restaurant_id == restaurant_id,
-            self._model.review_id.is_(None),
-            self._model.kind == kind,
-            self._model.status != RestaurantPhotoStatus.REJECTED,
-        ).scalar() or 0
-
 
 class RestaurantSaveCRUDRepository(CRUDRepository):
     def get_saved_ids(self, db: Session, user_id: int, restaurant_ids: List[int]) -> set:
