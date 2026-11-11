@@ -144,7 +144,8 @@ def _restaurant_out(
         "is_saved": restaurant.id in saved_ids,
         # Internal to the moderators
         "validation_issue": restaurant.validation_issue if is_moderator else None,
-        "contacted": restaurant.contacted if is_moderator else False,
+        # Also to its creator, told the place is being checked with
+        "contacted": restaurant.contacted if is_moderator or is_creator else False,
     }
     if not restaurant.has_storefront and not (is_moderator or is_creator):
         update["address"] = None

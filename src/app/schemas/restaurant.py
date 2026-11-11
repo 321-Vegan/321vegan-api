@@ -426,7 +426,7 @@ class RestaurantOut(BaseModel):
     rejection_reason: Optional[str] = None
     # Why moderators put it aside (moderators only)
     validation_issue: Optional[str] = None
-    # Put aside and contacted since (moderators only)
+    # Put aside and contacted since (moderators and its creator only)
     contacted: bool = False
     created_at: datetime
     updated_at: datetime
