@@ -458,6 +458,9 @@ class RestaurantMapOut(BaseModel):
     has_storefront: bool
     plant_milk_surcharge: Optional[float] = None
     serves_hot_drinks: Optional[bool] = None
+    # Shown in the map list
+    entrance_access: Optional[str] = None
+    has_accessible_toilets: Optional[bool] = None
     # For the "open now" filter of the map
     opening_hours: Optional[List[OpeningSlot]] = None
     # A pin per stop for food trucks
