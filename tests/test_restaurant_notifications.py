@@ -39,8 +39,18 @@ class RestaurantNotificationTests(NotificationTestCase):
                 self.assertEqual(notification.type, "restaurant.rejected")
                 self.assertEqual(notification.body, expected)
 
+    def test_contacted_notifies_creator(self):
+        service.notify_contacted(self.db, self.restaurant(self.user.id))
+        self.db.commit()
+        notification = self.db.query(Notification).one()
+        self.assertEqual(notification.user_id, self.user.id)
+        self.assertEqual(notification.type, "restaurant.contacted")
+        self.assertIn("« Chez Tofu »", notification.body)
+        self.assertEqual(notification.payload, {"restaurant_id": 7})
+
     def test_no_notification_without_creator(self):
         service.notify_validated(self.db, self.restaurant(None))
+        service.notify_contacted(self.db, self.restaurant(None))
         service.notify_rejected(self.db, self.restaurant(None), reason=None)
         self.db.commit()
         self.assertEqual(self.db.query(Notification).count(), 0)

@@ -40,6 +40,25 @@ class RestaurantNotificationService:
             commit=False,
         )
 
+    def notify_contacted(
+        self,
+        db: Session,
+        restaurant: Restaurant,
+    ) -> None:
+        """The place put aside was contacted: its issue stays internal."""
+        if restaurant.created_by is None:
+            return
+        notification_service.create(
+            db,
+            user_id=restaurant.created_by,
+            notification_type="restaurant.contacted",
+            title="Votre lieu est en cours de vérification",
+            body=f"Nous vérifions quelques informations auprès de « {restaurant.name} » "
+                 "avant de le valider.",
+            payload={"restaurant_id": restaurant.id},
+            commit=False,
+        )
+
     def notify_rejected(
         self,
         db: Session,

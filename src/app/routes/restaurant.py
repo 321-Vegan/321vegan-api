@@ -776,6 +776,8 @@ def update_restaurant(
     if after.get('validated') is True:
         restaurant_notification_service.notify_validated(
             db, restaurant, name=values.get('name'))
+    elif after.get('contacted') is True:
+        restaurant_notification_service.notify_contacted(db, restaurant)
 
     updated_restaurant = restaurant_crud.update_with_history(
         db, restaurant, values, before, after, user_id=current_user.id)
