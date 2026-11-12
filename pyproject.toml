@@ -21,6 +21,7 @@ dependencies = [
     "boto3 (>=1.42.59,<2.0.0)",
     "httpx (>=0.28.1,<0.29.0)",
     "python-jose[cryptography] (>=3.5.0,<4.0.0)",
+    "pillow (>=11.3.0,<13.0.0)",
 
 ]
 

@@ -1,6 +1,5 @@
 import uuid
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import List, Literal, Optional, Tuple
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
@@ -726,9 +725,8 @@ def set_selection_cover(
         RestaurantSelectionOut: The updated selection.
     """
     selection = _get_own_selection(db, id, current_user)
-    file_extension = Path(file.filename or "").suffix.lower()
-    object_name = f"selections/{selection.id}/cover_{uuid.uuid4().hex}{file_extension}"
-    s3_file_manager.upload_image(object_name, file)
+    object_name = s3_file_manager.upload_image(
+        f"selections/{selection.id}/cover_{uuid.uuid4().hex}", file)
     previous = restaurant_selection_crud.set_cover(db, selection, object_name)
     if previous:
         s3_file_manager.delete_file(previous)

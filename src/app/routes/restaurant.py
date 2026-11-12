@@ -1,5 +1,4 @@
 import uuid
-from pathlib import Path
 from typing import List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
@@ -933,9 +932,8 @@ def upload_restaurant_photo(
     """
     restaurant = _get_visible_restaurant(db, id, current_user)
 
-    file_extension = Path(file.filename or "").suffix.lower()
-    object_name = f"restaurants/{restaurant.id}/{kind.value.lower()}_{uuid.uuid4().hex}{file_extension}"
-    s3_file_manager.upload_image(object_name, file)
+    object_name = s3_file_manager.upload_image(
+        f"restaurants/{restaurant.id}/{kind.value.lower()}_{uuid.uuid4().hex}", file)
 
     photo = RestaurantPhoto(
         restaurant_id=restaurant.id,

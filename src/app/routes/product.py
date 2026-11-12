@@ -1,5 +1,4 @@
 import time
-from pathlib import Path
 from typing import Annotated, List, Optional, Tuple
 from fastapi import APIRouter, Body, Depends, HTTPException, status, File, UploadFile
 from fastapi.encoders import jsonable_encoder
@@ -536,9 +535,8 @@ def upload_product_image(
     try:
         old_image = product.image
         # Save the file and get the path
-        file_extension = Path(file.filename or "").suffix.lower()
-        filename = f"product_{product.id}_{product.ean}_{time.strftime('%Y%m%d_%H%M%S')}{file_extension}"
-        s3_file_manager.upload_image(filename, file)
+        filename = s3_file_manager.upload_image(
+            f"product_{product.id}_{product.ean}_{time.strftime('%Y%m%d_%H%M%S')}", file)
 
         # Update the product with the new image path
         product_update = ProductFile(image=filename)
@@ -620,9 +618,8 @@ def upload_product_brand_answer(
     try:
         old_brand_answer = product.brand_answer
         # Save the file and get the path
-        file_extension = Path(file.filename or "").suffix.lower()
-        filename = f"product_{product.id}_{product.ean}_brand_answer_{time.strftime('%Y%m%d_%H%M%S')}{file_extension}"
-        s3_file_manager.upload_image(filename, file)
+        filename = s3_file_manager.upload_image(
+            f"product_{product.id}_{product.ean}_brand_answer_{time.strftime('%Y%m%d_%H%M%S')}", file)
 
         # Update the product with the new brand answer path
         product_update = ProductBrandAnswerFile(brand_answer=filename)

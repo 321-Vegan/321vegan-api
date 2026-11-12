@@ -12,3 +12,4 @@ google-auth
 firebase-admin
 sentry-sdk[fastapi]
 boto3
+pillow

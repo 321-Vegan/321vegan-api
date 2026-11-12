@@ -1,5 +1,4 @@
 import uuid
-from pathlib import Path
 from typing import Optional, Tuple
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
@@ -417,9 +416,8 @@ def upload_review_photo(
             detail=f"A review cannot have more than {MAX_PHOTOS_PER_REVIEW} photos",
         )
 
-    file_extension = Path(file.filename or "").suffix.lower()
-    object_name = f"restaurants/{review.restaurant_id}/reviews/{review.id}_{uuid.uuid4().hex}{file_extension}"
-    s3_file_manager.upload_image(object_name, file)
+    object_name = s3_file_manager.upload_image(
+        f"restaurants/{review.restaurant_id}/reviews/{review.id}_{uuid.uuid4().hex}", file)
 
     photo = RestaurantPhoto(
         restaurant_id=review.restaurant_id,
