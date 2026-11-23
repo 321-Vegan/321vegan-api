@@ -33,3 +33,4 @@ from app.models.restaurant_lock import RestaurantLock
 from app.models.notification import Notification
 from app.models.push_device import PushDevice
 from app.models.notification_delivery import NotificationDelivery
+from app.models.veganuary_week import VeganuaryWeek
