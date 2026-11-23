@@ -34,6 +34,7 @@ from app.routes.restaurant_selection import website_router as restaurant_selecti
 from app.routes.notification import router as notification_router
 from app.routes.push_device import router as push_device_router
 from app.routes.veganuary_week import router as veganuary_week_router
+from app.routes.veganuary_day import router as veganuary_day_router
 
 
 __all__ = [
@@ -73,4 +74,5 @@ __all__ = [
     "notification_router",
     "push_device_router",
     "veganuary_week_router",
+    "veganuary_day_router",
 ]

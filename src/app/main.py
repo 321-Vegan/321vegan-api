@@ -52,6 +52,7 @@ from app.routes import (
     notification_router,
     push_device_router,
     veganuary_week_router,
+    veganuary_day_router,
 )
 from app.log import get_logger
 
@@ -142,6 +143,7 @@ app.include_router(restaurant_selection_website_router, prefix="/website/restaur
 app.include_router(notification_router, prefix="/me/notifications", tags=["notifications"])
 app.include_router(push_device_router, prefix="/me/push-devices", tags=["push_devices"])
 app.include_router(veganuary_week_router, prefix="/veganuary-weeks", tags=["veganuary"])
+app.include_router(veganuary_day_router, prefix="/me/veganuary-days", tags=["veganuary"])
 
 # Serve static files
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
