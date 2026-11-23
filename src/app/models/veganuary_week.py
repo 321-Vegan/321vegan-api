@@ -8,9 +8,9 @@ from app.database.base_class import Base
 class VeganuaryWeek(Base):
     """A week of the app's Veganuary course, as the app reads it.
 
-    [content] is the week's JSON, the same as the app's bundled
-    `lib/assets/veganuary/weekN.json`: editing it here changes the course
-    without an app update (the app keeps its bundled copy as a fallback).
+    [content] is the week's JSON, as the app reads it. The course is only
+    here (not in the open source app repository): the app downloads it on
+    its first visit, then again whenever it changes, without an update.
     """
 
     __tablename__ = "veganuary_weeks"

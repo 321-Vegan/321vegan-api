@@ -1,8 +1,9 @@
-"""Stores the Veganuary weeks given (the app's lib/assets/veganuary/weekN.json),
-creating or replacing each one: the app then downloads them at its next
-launch. Run the app's tests on them first (test/models/veganuary_test.dart).
+"""Stores the Veganuary weeks given (weekN.json files, e.g. downloaded from
+the admin tool), creating or replacing each one: the apps then download
+them at their next visit. The admin tool's import checks them first, prefer
+it; this is for a restore from a backup.
 
-    docker cp ../321vegan-app/flutter_app/lib/assets/veganuary 321veganapi:/tmp/veganuary
+    docker cp ./veganuary 321veganapi:/tmp/veganuary
     docker exec 321veganapi poetry run python -m scripts.import_veganuary /tmp/veganuary/week*.json
 """
 import json

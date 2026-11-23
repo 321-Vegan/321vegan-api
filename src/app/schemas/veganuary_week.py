@@ -9,7 +9,7 @@ def _utc(value: datetime) -> str:
 
 
 class VeganuaryWeekIn(BaseModel):
-    """The week's JSON, as in the app's `lib/assets/veganuary/weekN.json`."""
+    """The week's JSON, as the app reads it."""
 
     content: Dict[str, Any]
 
@@ -24,8 +24,21 @@ class VeganuaryWeekOut(BaseModel):
         json_encoders = {datetime: _utc}
 
 
+class VeganuaryImageOut(BaseModel):
+    """An image of the course in the bucket: [path] is what the weeks' JSON
+    refers to (the apps add the storage's address)."""
+
+    path: str
+    size: Optional[int] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        json_encoders = {datetime: _utc}
+
+
 class VeganuaryVersionOut(BaseModel):
     """Changes whenever a week is added, edited or removed: the app only
-    downloads the weeks again when it differs from the one it has."""
+    downloads the weeks again when it differs from the one it has. Null
+    while no week is stored."""
 
     version: Optional[str] = None
