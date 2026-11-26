@@ -59,7 +59,8 @@ class ShopOutPaginated(BaseModel):
 class ShopScanSummaryOut(BaseModel):
     ean: str
     scan_count: int
-    last_scanned_at: datetime
+    # None for a product only reported as found, never scanned at the shop.
+    last_scanned_at: Optional[datetime] = None
     not_found_count: int = 0
     last_not_found_at: Optional[datetime] = None
     found_count: int = 0

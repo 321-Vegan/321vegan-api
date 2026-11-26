@@ -228,145 +228,139 @@ class ShopCRUDRepository(CRUDRepository):
             self._model.date_deleted.is_(None)
         ).limit(limit).all()
 
-    def get_shop_scan_summary(self, db: Session, shop_id: int) -> List[dict]:
-        """
-        Get distinct EANs scanned at a shop with scan count, last scan date,
-        not-found report stats, and a computed presence score.
+    # A product seen without being scanned ("found" report) counts less than a
+    # scan: its score starts lower and fades over a shorter, fixed window.
+    SCAN_SCORE_CEILING = 0.99
+    FOUND_REPORT_SCORE_CEILING = 0.70
+    FOUND_REPORT_WINDOW_DAYS = 30
 
-        Only not-found reports that occurred AFTER the last sighting (scan or
-        found report) for that EAN are considered relevant (a sighting after
-        a report proves restocking).
+    def get_shop_scan_summary(
+        self, db: Session, shop_id: int, include_reported: bool = False
+    ) -> List[dict]:
+        """
+        Get the products seen at a shop with scan and report stats, and a
+        computed presence score.
+
+        A product is seen at a shop when it was scanned there, or reported as
+        found there without a scan. Only not-found reports that occurred AFTER
+        the last sighting for that EAN are considered relevant (a sighting
+        after a report proves restocking).
 
         Parameters:
             db (Session): The database session.
             shop_id (int): The shop ID.
+            include_reported (bool): Also return products that were only
+                reported as found, never scanned at this shop. Off by default:
+                older app versions expect a last scan date on every product.
 
         Returns:
-            List[dict]: List of dicts with ean, scan_count, last_scanned_at,
-                        not_found_count, last_not_found_at, presence_score.
+            List[dict]: List of dicts with ean, scan_count, last_scanned_at
+                        (None when never scanned), not_found_count,
+                        last_not_found_at, found_count, last_found_at,
+                        presence_score; most recently seen first.
         """
-        from sqlalchemy import and_
-        from sqlalchemy.dialects.postgresql import array_agg
-
-        # Subquery 1: scan stats per EAN
-        scan_subq = (
-            db.query(
+        scans = {
+            row.ean: row
+            for row in db.query(
                 ScanEvent.ean,
-                func.count(ScanEvent.id).label("scan_count"),
-                func.max(ScanEvent.created_at).label("last_scanned_at"),
+                func.count(ScanEvent.id).label("count"),
+                func.max(ScanEvent.created_at).label("last_at"),
             )
             .filter(ScanEvent.shop_id == shop_id)
             .group_by(ScanEvent.ean)
-            .subquery()
-        )
-
-        # Subquery 2: not-found report stats per EAN, only reports after last scan
-        report_subq = (
-            db.query(
-                ProductNotFoundReport.ean,
-                array_agg(ProductNotFoundReport.created_at).label("report_dates"),
-            )
-            .join(
-                scan_subq,
-                and_(
-                    scan_subq.c.ean == ProductNotFoundReport.ean,
-                    ProductNotFoundReport.created_at > scan_subq.c.last_scanned_at,
-                ),
-            )
-            .filter(ProductNotFoundReport.shop_id == shop_id)
-            .group_by(ProductNotFoundReport.ean)
-            .subquery()
-        )
-
-        # Subquery 3: found report stats per EAN, only reports after last scan
-        found_subq = (
-            db.query(
+        }
+        found_reports = {
+            row.ean: row
+            for row in db.query(
                 ProductFoundReport.ean,
-                func.count(ProductFoundReport.id).label("found_count"),
-                func.max(ProductFoundReport.created_at).label("last_found_at"),
-                array_agg(ProductFoundReport.created_at).label("found_dates"),
-            )
-            .join(
-                scan_subq,
-                and_(
-                    scan_subq.c.ean == ProductFoundReport.ean,
-                    ProductFoundReport.created_at > scan_subq.c.last_scanned_at,
-                ),
+                func.count(ProductFoundReport.id).label("count"),
+                func.max(ProductFoundReport.created_at).label("last_at"),
             )
             .filter(ProductFoundReport.shop_id == shop_id)
             .group_by(ProductFoundReport.ean)
-            .subquery()
-        )
+        }
+        not_found_dates: dict[str, list[datetime]] = {}
+        for ean, created_at in db.query(
+            ProductNotFoundReport.ean, ProductNotFoundReport.created_at
+        ).filter(ProductNotFoundReport.shop_id == shop_id):
+            not_found_dates.setdefault(ean, []).append(created_at)
 
-        # Join scan stats with report stats
-        results = (
-            db.query(
-                scan_subq.c.ean,
-                scan_subq.c.scan_count,
-                scan_subq.c.last_scanned_at,
-                report_subq.c.report_dates,
-                func.coalesce(found_subq.c.found_count, 0).label("found_count"),
-                found_subq.c.last_found_at,
-                found_subq.c.found_dates,
-            )
-            .outerjoin(report_subq, report_subq.c.ean == scan_subq.c.ean)
-            .outerjoin(found_subq, found_subq.c.ean == scan_subq.c.ean)
-            .order_by(scan_subq.c.last_scanned_at.desc())
-            .all()
-        )
+        eans = set(scans)
+        if include_reported:
+            eans |= set(found_reports)
 
         now = datetime.now()
-        summaries = []
+        summaries: list[tuple[datetime, dict]] = []
 
-        for row in results:
-            report_dates = [d for d in (row.report_dates or []) if d is not None]
-            found_dates = [d for d in (row.found_dates or []) if d is not None]
+        for ean in eans:
+            scan = scans.get(ean)
+            found = found_reports.get(ean)
+            last_scanned_at = scan.last_at if scan else None
+            last_found_at = found.last_at if found else None
 
-            # A found report is a sighting, just like a scan: only not-found
-            # reports made after the most recent sighting are still relevant.
-            last_seen_at = max([row.last_scanned_at, *found_dates])
-            relevant_report_dates = [d for d in report_dates if d > last_seen_at]
+            # Only not-found reports made after the most recent sighting
+            # (scan or found report) are still relevant.
+            last_seen_at = max(d for d in (last_scanned_at, last_found_at) if d)
+            relevant_report_dates = [
+                d for d in not_found_dates.get(ean, []) if d > last_seen_at
+            ]
 
             presence_score = self._compute_presence_score(
-                now, last_seen_at, row.scan_count, relevant_report_dates,
+                now,
+                last_scanned_at=last_scanned_at,
+                scan_count=scan.count if scan else 0,
+                last_found_at=last_found_at,
+                report_dates=relevant_report_dates,
             )
 
-            summaries.append({
-                "ean": row.ean,
-                "scan_count": row.scan_count,
-                "last_scanned_at": row.last_scanned_at,
+            summaries.append((last_seen_at, {
+                "ean": ean,
+                "scan_count": scan.count if scan else 0,
+                "last_scanned_at": last_scanned_at,
                 "not_found_count": len(relevant_report_dates),
                 "last_not_found_at": max(relevant_report_dates, default=None),
-                "found_count": row.found_count,
-                "last_found_at": row.last_found_at,
+                "found_count": found.count if found else 0,
+                "last_found_at": last_found_at,
                 "presence_score": round(presence_score, 2),
-            })
+            }))
 
-        return summaries
+        summaries.sort(key=lambda s: s[0], reverse=True)
+        return [summary for _, summary in summaries]
 
-    @staticmethod
+    @classmethod
     def _compute_presence_score(
+        cls,
         now: datetime,
-        last_seen_at: datetime,
+        last_scanned_at: Optional[datetime],
         scan_count: int,
+        last_found_at: Optional[datetime],
         report_dates: list[datetime],
     ) -> float:
         """
         Compute a presence score between 0.0 and 1.0.
 
-        - Starts at 0.99 right after a sighting (scan or found report).
-        - Frequency (scan count capped at 10) extends the decay window:
-          1 scan → 36-day window, 10 scans → 90-day window.
+        - A scan starts the score at 0.99. Frequency (scan count capped at 10)
+          extends its decay window: 1 scan → 36 days, 10 scans → 90 days.
+        - A found report (seen without a scan) starts it at 0.70 only, over a
+          fixed 30-day window: it never weighs as much as a scan.
+        - The score follows whichever of the two is higher.
         - Decay is quadratic (n=2): slow at first, accelerating over time.
         - Penalty: each not-found report made after the last sighting
           subtracts up to 0.25, decaying linearly over 30 days.
         - Floor: score never drops below 0.15 when no such report exists.
         """
-        days_since_seen = (now - last_seen_at).total_seconds() / 86400
-        frequency = max(0.0, min(1.0, scan_count / 10))
+        scan_score = 0.0
+        if last_scanned_at is not None:
+            frequency = max(0.0, min(1.0, scan_count / 10))
+            scan_score = cls._freshness(
+                now, last_scanned_at, 30 * (1 + frequency * 2)
+            )
 
-        effective_window = 30 * (1 + frequency * 2)
-        freshness = max(0.0, 1.0 - (days_since_seen / effective_window) ** 2)
+        found_score = 0.0
+        if last_found_at is not None:
+            found_score = cls.FOUND_REPORT_SCORE_CEILING * cls._freshness(
+                now, last_found_at, cls.FOUND_REPORT_WINDOW_DAYS
+            )
 
         penalty = 0.0
         for date in report_dates:
@@ -374,7 +368,16 @@ class ShopCRUDRepository(CRUDRepository):
             penalty += 0.25 * max(0.0, 1.0 - days_ago / 30)
 
         min_score = 0.0 if report_dates else 0.15
-        return max(min_score, min(0.99, freshness - penalty))
+        return max(
+            min_score,
+            min(cls.SCAN_SCORE_CEILING, max(scan_score, found_score) - penalty),
+        )
+
+    @staticmethod
+    def _freshness(now: datetime, seen_at: datetime, window_days: float) -> float:
+        """1.0 right after [seen_at], down to 0.0 after [window_days]."""
+        days_since_seen = (now - seen_at).total_seconds() / 86400
+        return max(0.0, 1.0 - (days_since_seen / window_days) ** 2)
 
     def get_shops_by_eans(self, db: Session, eans: List[str]) -> List[int]:
         """

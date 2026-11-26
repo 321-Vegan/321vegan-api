@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Dict, Optional
 
 from pydantic import BaseModel
@@ -37,8 +37,10 @@ class VeganuaryImageOut(BaseModel):
 
 
 class VeganuaryVersionOut(BaseModel):
-    """Changes whenever a week is added, edited or removed: the app only
-    downloads the weeks again when it differs from the one it has. Null
-    while no week is stored."""
+    """[version] changes whenever a week is added, edited or removed: the
+    app only downloads the weeks again when it differs from the one it has.
+    Null while no week is stored. [opens_at]: the day the app's Veganuary
+    tab opens (VEGANUARY_OPENS_AT in routes/veganuary_week.py)."""
 
     version: Optional[str] = None
+    opens_at: Optional[date] = None

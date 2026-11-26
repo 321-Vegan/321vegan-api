@@ -1,6 +1,7 @@
 import re
 import unicodedata
 import uuid
+from datetime import date
 from pathlib import PurePosixPath
 from typing import List
 
@@ -24,6 +25,10 @@ log = get_logger(__name__)
 
 router = APIRouter(dependencies=[Depends(get_admin_or_client)])
 
+# The day the app's Veganuary tab opens (a teaser before): changed here
+# without an app update
+VEGANUARY_OPENS_AT = date(2027, 1, 1)
+
 
 @router.get("/", response_model=List[VeganuaryWeekOut], status_code=status.HTTP_200_OK)
 def fetch_veganuary_weeks(db: Session = Depends(get_db)) -> List[VeganuaryWeek]:
@@ -41,8 +46,12 @@ def fetch_veganuary_version(db: Session = Depends(get_db)) -> VeganuaryVersionOu
     """
     Fetch the version of the course: the app downloads the weeks again only
     when it changes. Null while no week is stored (the app keeps its own).
+    Also the day the course opens in the app (VEGANUARY_OPENS_AT).
     """
-    return VeganuaryVersionOut(version=veganuary_week_crud.version(db))
+    return VeganuaryVersionOut(
+        version=veganuary_week_crud.version(db),
+        opens_at=VEGANUARY_OPENS_AT,
+    )
 
 
 # The course's images, in the bucket: the weeks' JSON refers to them by

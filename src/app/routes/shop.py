@@ -124,15 +124,20 @@ def fetch_shops_in_area(
     "/{id}/products", response_model=List[ShopScanSummaryOut], status_code=status.HTTP_200_OK
 )
 def fetch_shop_products(
-    id: int, db: Session = Depends(get_db)
+    id: int,
+    include_reported: bool = False,
+    db: Session = Depends(get_db),
 ) -> List[ShopScanSummaryOut]:
     """
-    Fetch products of interest scanned at a shop.
+    Fetch products of interest seen at a shop.
 
-    Returns distinct EANs with scan count and last scan date.
+    Returns distinct EANs with scan and report stats and a presence score.
 
     Parameters:
         id (int): The ID of the shop.
+        include_reported (bool): Also return products only reported as found
+            (seen without a scan), whose last_scanned_at is null. Sent by app
+            versions that know how to show them.
         db (Session): The database session.
 
     Returns:
@@ -143,7 +148,9 @@ def fetch_shop_products(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Shop not found"
         )
-    return shop_crud.get_shop_scan_summary(db, id)
+    return shop_crud.get_shop_scan_summary(
+        db, id, include_reported=include_reported
+    )
 
 
 @router.get(
