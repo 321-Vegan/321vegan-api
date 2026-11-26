@@ -7,7 +7,8 @@ from sqlalchemy.pool import StaticPool
 
 from app.database.base_class import Base
 from app.models import (
-    Brand, ErrorReport, InterestingProduct, Notification, NotificationDelivery, Product,
+    Brand, ErrorReport, InterestingProduct, Notification, NotificationBroadcast,
+    NotificationDelivery, Product,
     ProductCategory, PushDevice, User,
 )
 from app.services.notification import notification_service
@@ -29,7 +30,8 @@ class NotificationTestCase(unittest.TestCase):
         with engine.begin() as connection:
             connection.exec_driver_sql("PRAGMA foreign_keys=ON")
             Base.metadata.create_all(connection, tables=[
-                User.__table__, *PRODUCT_TABLES, ErrorReport.__table__, Notification.__table__,
+                User.__table__, *PRODUCT_TABLES, ErrorReport.__table__,
+                NotificationBroadcast.__table__, Notification.__table__,
                 PushDevice.__table__, NotificationDelivery.__table__,
             ])
         self.db = Session(engine, autoflush=False)

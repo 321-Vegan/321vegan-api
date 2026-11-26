@@ -19,7 +19,9 @@ from sqlalchemy.schema import CreateSchema, DropSchema
 from app.crud.notification import notification_crud
 from app.database.base_class import Base
 from app.database.session import SQLALCHEMY_DATABASE_URL
-from app.models import ErrorReport, Notification, NotificationDelivery, PushDevice, User
+from app.models import (
+    ErrorReport, Notification, NotificationBroadcast, NotificationDelivery, PushDevice, User,
+)
 from app.schemas.error_report import ErrorReportUpdate
 from app.services.error_report import error_report_service
 from app.services.fcm import FCMResult
@@ -51,7 +53,8 @@ class NotificationConcurrencyTestCase(unittest.TestCase):
         cls.addClassCleanup(cls.engine.dispose)
         cls.Session = sessionmaker(bind=cls.engine, autoflush=False)
         Base.metadata.create_all(cls.engine, tables=[
-            User.__table__, *PRODUCT_TABLES, ErrorReport.__table__, Notification.__table__,
+            User.__table__, *PRODUCT_TABLES, ErrorReport.__table__,
+            NotificationBroadcast.__table__, Notification.__table__,
             PushDevice.__table__,
             NotificationDelivery.__table__,
         ])

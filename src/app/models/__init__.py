@@ -31,6 +31,7 @@ from app.models.product_edit import ProductEdit
 from app.models.product_lock import ProductLock
 from app.models.restaurant_lock import RestaurantLock
 from app.models.notification import Notification
+from app.models.notification_broadcast import NotificationBroadcast
 from app.models.push_device import PushDevice
 from app.models.notification_delivery import NotificationDelivery
 from app.models.veganuary_week import VeganuaryWeek

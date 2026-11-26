@@ -37,6 +37,13 @@ class Notification(Base):
     created_at = Column(DateTime, default=datetime.now, nullable=False)
     read_at = Column(DateTime, nullable=True)
     expires_at = Column(DateTime, nullable=False)
+    # Set when sent to everyone from the admin tool
+    broadcast_id = Column(
+        Integer,
+        ForeignKey("notification_broadcasts.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     user = relationship("User", back_populates="notifications")
     deliveries = relationship(

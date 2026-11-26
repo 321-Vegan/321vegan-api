@@ -21,14 +21,28 @@ class NotificationDeliveryService:
         db: Session,
         notification: Notification,
     ) -> list[NotificationDelivery]:
+        return self.enqueue_for_notifications(db, [notification])
+
+    def enqueue_for_notifications(
+        self,
+        db: Session,
+        notifications: list[Notification],
+    ) -> list[NotificationDelivery]:
+        """One delivery per enabled device of each notification's user (the
+        notifications already flushed: they need their id)."""
+        user_ids = {notification.user_id for notification in notifications}
         devices = (
             db.query(PushDevice)
             .filter(
-                PushDevice.user_id == notification.user_id,
+                PushDevice.user_id.in_(user_ids),
                 PushDevice.enabled.is_(True),
             )
             .all()
         )
+        devices_by_user: dict[int, list[PushDevice]] = {}
+        for device in devices:
+            devices_by_user.setdefault(device.user_id, []).append(device)
+
         now = datetime.now()
         deliveries = [
             NotificationDelivery(
@@ -40,7 +54,8 @@ class NotificationDeliveryService:
                 created_at=now,
                 updated_at=now,
             )
-            for device in devices
+            for notification in notifications
+            for device in devices_by_user.get(notification.user_id, [])
         ]
         db.add_all(deliveries)
         return deliveries

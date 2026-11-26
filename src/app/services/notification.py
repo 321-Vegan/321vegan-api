@@ -28,6 +28,7 @@ class NotificationService:
         title: str,
         body: str,
         payload: dict[str, Any],
+        broadcast_id: int | None = None,
         commit: bool = True,
     ) -> Notification:
         """Create an occurrence, serializing inserts for each recipient until commit."""
@@ -44,6 +45,7 @@ class NotificationService:
             title=title,
             body=body,
             payload=payload,
+            broadcast_id=broadcast_id,
             created_at=now,
             expires_at=now + timedelta(days=self.retention_days),
         )

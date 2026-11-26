@@ -50,6 +50,7 @@ from app.routes import (
     restaurant_website_router,
     restaurant_selection_website_router,
     notification_router,
+    notification_broadcast_router,
     push_device_router,
     veganuary_week_router,
     veganuary_day_router,
@@ -141,6 +142,8 @@ app.include_router(restaurant_selection_router, prefix="/restaurant-selections",
 app.include_router(restaurant_website_router, prefix="/website/restaurants", tags=["website"])
 app.include_router(restaurant_selection_website_router, prefix="/website/restaurant-selections", tags=["website"])
 app.include_router(notification_router, prefix="/me/notifications", tags=["notifications"])
+app.include_router(notification_broadcast_router, prefix="/notification-broadcasts",
+                   tags=["notifications"])
 app.include_router(push_device_router, prefix="/me/push-devices", tags=["push_devices"])
 app.include_router(veganuary_week_router, prefix="/veganuary-weeks", tags=["veganuary"])
 app.include_router(veganuary_day_router, prefix="/me/veganuary-days", tags=["veganuary"])

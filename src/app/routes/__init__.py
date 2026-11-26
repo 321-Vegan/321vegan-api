@@ -32,6 +32,7 @@ from app.routes.restaurant_edit_suggestion import router as restaurant_edit_sugg
 from app.routes.restaurant_selection import router as restaurant_selection_router
 from app.routes.restaurant_selection import website_router as restaurant_selection_website_router
 from app.routes.notification import router as notification_router
+from app.routes.notification_broadcast import router as notification_broadcast_router
 from app.routes.push_device import router as push_device_router
 from app.routes.veganuary_week import router as veganuary_week_router
 from app.routes.veganuary_day import router as veganuary_day_router
@@ -72,6 +73,7 @@ __all__ = [
     "restaurant_website_router",
     "restaurant_selection_website_router",
     "notification_router",
+    "notification_broadcast_router",
     "push_device_router",
     "veganuary_week_router",
     "veganuary_day_router",
